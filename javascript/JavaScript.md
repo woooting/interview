@@ -122,6 +122,7 @@ JavaScript 对象是通过引用来传递的，我们创建的每个新对象实
 # new 操作符内部工作步骤
 
 ## 1. 创建空对象
+
 创建一个新的空对象（`{}`）。
 
 ## 2. 设置原型
@@ -150,3 +151,103 @@ function myNew(constructorFn, ...args) {
   return res instanceof Object ? res : newObj;
 }
 ```
+
+# js判断数据类型的四种方式
+
+## 1. typeof
+
+`typeof` 操作符返回一个表示数据类型的字符串。其底层实现是通过判断变量在内存中的**类型标签（Type Tag）**来区分基本类型。JavaScript 引擎内部使用低位二进制位存储类型信息：
+
+- `000`：对象（Object）
+- `1`：整数（Int）
+- `010`：浮点数（Double）
+- `100`：字符串（String）
+- `110`：布尔值（Boolean）
+- `-2^30`：undefined（即全 0，但特殊标记）
+
+```javascript
+typeof 42          // "number"
+typeof 'hello'     // "string"
+typeof true        // "boolean"
+typeof undefined   // "undefined"
+typeof Symbol()    // "symbol"
+typeof 10n         // "bigint"
+typeof function(){}  // "function"
+```
+
+**特殊情况与局限：**
+
+- **无法精准判断引用类型**：`typeof` 对数组、对象、正则、Date 等引用类型统一返回 `"object"`，无法进一步区分。
+- **`typeof null` 返回 `"object"`**：这是一个历史遗留 Bug。在 JS 底层存储中，`null` 的机器码全为 0，而对象类型标签也是 `000`，导致 `typeof null` 错误地返回 `"object"`。
+
+```javascript
+typeof null           // "object"  ← 历史遗留Bug
+typeof []             // "object"
+typeof {}             // "object"
+typeof /regex/        // "object"
+typeof new Date()     // "object"
+```
+
+## 2. instanceof
+
+`instanceof` 操作符通过**原型链查找**来判断数据类型，检测左边对象的原型链上是否存在右边构造函数的 `prototype`。主要用于判断引用类型数据。
+
+```javascript
+[] instanceof Array           // true
+{} instanceof Object          // true
+new Date() instanceof Date    // true
+function(){} instanceof Function  // true
+
+// 原型链上的构造函数都会返回 true
+[] instanceof Object          // true（Array 的原型链上有 Object.prototype）
+```
+
+**局限：**
+
+- 不能判断基本类型（如 `123 instanceof Number` 返回 `false`）。
+- 跨 iframe / 跨窗口环境下，不同执行上下文有独立的构造函数，`instanceof` 会失效。
+
+## 3. Array.isArray
+
+`Array.isArray()` 是 `Array` 构造函数的**静态方法**，专门用于判断一个值是否为数组，返回布尔值。弥补了 `typeof` 和 `instanceof` 在判断数组时的不足。
+
+```javascript
+Array.isArray([])                // true
+Array.isArray(new Array())       // true
+Array.isArray({})                // false
+Array.isArray('hello')           // false
+Array.isArray(arguments)         // false（类数组但不是数组）
+
+// 跨 iframe 环境下依然可靠（不依赖原型链）
+```
+
+## 4. Object.prototype.toString.call
+
+这是判断数据类型**最准确**的方法。通过调用 `Object.prototype` 上的 `toString` 方法，返回 `[object Xxx]` 格式的字符串，其中 `Xxx` 为内部 `[[Class]]` 属性的值。
+
+```javascript
+Object.prototype.toString.call(42)           // "[object Number]"
+Object.prototype.toString.call('hello')      // "[object String]"
+Object.prototype.toString.call(true)         // "[object Boolean]"
+Object.prototype.toString.call(undefined)    // "[object Undefined]"
+Object.prototype.toString.call(null)         // "[object Null]"
+Object.prototype.toString.call([])           // "[object Array]"
+Object.prototype.toString.call({})           // "[object Object]"
+Object.prototype.toString.call(function(){}) // "[object Function]"
+Object.prototype.toString.call(new Date())   // "[object Date]"
+Object.prototype.toString.call(/regex/)      // "[object RegExp]"
+Object.prototype.toString.call(new Map())    // "[object Map]"
+Object.prototype.toString.call(new Set())    // "[object Set]"
+Object.prototype.toString.call(Symbol())     // "[object Symbol]"
+```
+
+**为什么必须用 `call`？** 因为数组、字符串等类型重写了自身的 `toString` 方法，直接调用会返回不同的结果（如数组的 `toString()` 返回以逗号拼接的元素字符串）。必须借用 `Object.prototype` 原生的 `toString` 才能拿到内部类型标记。
+
+## 总结
+
+| 方法 | 判断范围 | 优缺点 |
+|------|---------|--------|
+| `typeof` | 基本类型 + function | 快速简单，无法区分引用类型，`null` 误判 |
+| `instanceof` | 引用类型 | 基于原型链，无法判断基本类型，跨 iframe 失效 |
+| `Array.isArray` | 仅数组 | 数组判断专用，跨 iframe 可靠 |
+| `Object.prototype.toString.call` | 所有类型 | 最全面准确，写法稍长 |
