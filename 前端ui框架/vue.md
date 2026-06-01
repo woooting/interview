@@ -315,3 +315,306 @@ function render(ctx) {
 
 编译器做的这层"自动 `.value`"本质上是一种**开发体验优化**——模板中频繁写 `.value` 会让代码很啰嗦，而编译阶段做这件事没有运行时成本。
 
+---
+
+# script+setup
+
+## 1. 核心前提：模板本质是一个函数
+
+- 模板会被编译成 `render(ctx)` 函数，渲染 UI 时只能通过 `ctx`（上下文）访问变量
+- 这个 `ctx` 是什么，取决于你写的 script 形式：
+  - 选项式 API → `ctx` 是**组件实例的 Proxy**
+  - 组合式 API（普通 setup）→ `ctx` 是 `setup()` **函数的返回值**
+
+## 2. 三种"暴露"机制
+
+### 2.1 选项式 API（Vue 2 风格）
+
+- 变量必须写在 `data() { return {...} }`
+- 方法必须写在 `methods: {...}`
+- 框架自动读取并挂载到组件实例上，模板通过 `this.xxx` 访问
+- **暴露是隐式的**，由 Vue 内部统一处理
+
+### 2.2 普通 `<script>` + 组合式 API
+
+```js
+import { ref } from 'vue'
+import Foo from './Foo.vue'
+
+export default {
+  components: { Foo },        // 组件要手动注册
+  setup(props) {
+    const count = ref(0)
+    const add = () => count.value++
+
+    return { count, add, Foo } // ← 必须手动 return，模板才能用
+  }
+}
+```
+
+- `setup()` 本质是普通 JS 函数，函数内的局部变量函数外访问不到
+- **必须手动 return** 告诉 Vue 哪些变量暴露给模板
+- 组件要手动注册到 `components`
+
+### 2.3 `<script setup>`（语法糖）
+
+```vue
+<script setup>
+import { ref } from 'vue'
+import Foo from './Foo.vue'    // 自动注册
+
+const count = ref(0)
+const add = () => count.value++
+// 不写 return
+</script>
+```
+
+- **编译器自动收集**顶层所有绑定（变量、函数、import 进来的组件），塞到 `__returned__` 对象里
+- 编译后等价于手写版的 `return { count, add, Foo }`
+
+## 3. `<script setup>` 编译后大致等价于
+
+```js
+import { ref } from 'vue'
+import Foo from './Foo.vue'
+
+export default {
+  components: { Foo },   // 编译器从 import 中收集
+  setup(__props) {
+    const count = ref(0)
+    const add = () => count.value++
+    const __returned__ = { count, add, Foo, ref }  // 自动 return
+    return __returned__
+  }
+}
+```
+
+## 4. 几个深层细节
+
+### 4.1 为什么"自动"能成立
+
+- `<script setup>` 整个文件的顶层作用域 = `setup` 函数体的作用域
+- 编译器做一次 AST 扫描，把所有顶层声明收集到返回对象
+- **纯静态分析**，无反射、无 Proxy 黑魔法
+
+### 4.2 顶层 import 的组件自动注册
+
+- 编译器把所有 `import X from './X.vue'` 收集起来
+- 自动生成 `components: { X }`，省去手写注册
+
+### 4.3 默认私有性
+
+- `<script setup>` 所有顶层绑定**仅在当前组件模板和内部可见**
+- 不会挂到组件实例上，父组件用 `ref` 拿不到
+- 如需对外暴露，需用 `defineExpose({ count })` 显式声明
+
+### 4.4 编译时宏
+
+- `defineProps` / `defineEmits` / `defineModel` / `defineExpose` / `defineOptions` / `defineSlots`
+- 看起来像函数，**但不会被 import，也没有运行时实现**
+- 编译器识别这些调用，**替换成对应的运行时代码**（如 `props` 选项、`emits` 选项）
+- 因此能"凭空"提供完整的 TypeScript 类型推导
+
+---
+
+# vue组件生命周期
+
+## 1. 钩子列表与执行顺序
+
+### 1.1 完整钩子列表
+
+#### 组合式 API
+
+| 钩子 | 触发时机 |
+|---|---|
+| `onBeforeMount` | DOM 挂载前 |
+| `onMounted` | DOM 挂载完成（post flush 队列） |
+| `onBeforeUpdate` | 响应式数据变化，DOM 重新 patch 前 |
+| `onUpdated` | DOM 重新 patch 完成（post flush 队列） |
+| `onBeforeUnmount` | 组件卸载前 |
+| `onUnmounted` | 组件卸载完成 |
+| `onActivated` | keep-alive 缓存的组件被激活 |
+| `onDeactivated` | keep-alive 缓存的组件被切走 |
+| `onErrorCaptured` | 捕获后代组件抛出的错误 |
+| `onRenderTracked` | 渲染时追踪到响应式依赖（调试用） |
+| `onRenderTriggered` | 响应式依赖触发重新渲染时（调试用） |
+
+#### 选项式 API 对照
+
+| 选项式 | 对应组合式 |
+|---|---|
+| `beforeCreate` | ❌ 无（被 setup 取代） |
+| `created` | ❌ 无（被 setup 取代） |
+| `beforeMount` | `onBeforeMount` |
+| `mounted` | `onMounted` |
+| `beforeUpdate` | `onBeforeUpdate` |
+| `updated` | `onUpdated` |
+| `beforeUnmount` | `onBeforeUnmount` |
+| `unmounted` | `onUnmounted` |
+| `activated` | `onActivated` |
+| `deactivated` | `onDeactivated` |
+| `errorCaptured` | `onErrorCaptured` |
+| `renderTracked` | `onRenderTracked` |
+| `renderTriggered` | `onRenderTriggered` |
+
+#### 关键注意点
+
+- **没有 `onBeforeCreate` / `onCreated`** —— setup 函数本身就是 created 阶段
+- `onMounted` / `onUpdated` 走 **post flush 队列**（微任务），不在 patch 同步流程里
+- 调试钩子 `onRenderTracked` / `onRenderTriggered` 只在开发模式生效
+- `onErrorCaptured` 返回 `false` 可以阻止错误继续向上传播
+
+### 1.2 完整执行顺序（时间线）
+
+```
+setup()                    ← 同步执行，不是钩子，是初始化函数
+   ↓
+onBeforeMount              ← 首次 patch DOM 前（同步）
+   ↓
+（首次 patch，DOM 插入）
+   ↓
+onMounted                  ← patch DOM 后（异步微任务）
+   ↓
+（响应式数据变化）
+   ↓
+onBeforeUpdate             ← 重新 patch 前（同步）
+   ↓
+（重新 patch）
+   ↓
+onUpdated                  ← 重新 patch 后（异步微任务）
+   ↓  （重复 N 次）
+onBeforeUnmount            ← 卸载前（同步）
+   ↓
+（DOM 移除）
+   ↓
+onUnmounted                ← 卸载完成（同步）
+```
+
+### 1.3 关键规则
+
+- **挂载周期只走一次**：首次 patch 后 `instance.isMounted = true`，之后所有 effect 重跑都走更新分支
+- **更新周期可触发多次**：每次响应式数据变化都会重新 patch，触发 beforeUpdate / updated
+- **销毁周期触发一次**：组件销毁时跑 beforeUnmount → unmounted
+- **setup 不是生命周期钩子**，而是组件实例化时同步执行的初始化函数，介于 beforeCreate 和 created 之间（Vue 3 把这两个钩子删了，因为 setup 取代了它们）
+
+## 2. 内部实现
+
+### 2.1 本质
+
+- 钩子 = 组件实例上的**回调数组**（`instance.mounted = []`、`instance.updated = []` 等）
+- 顺序 = 渲染器 **patch 流程代码的物理书写顺序**（写死在哪一步调什么钩子）
+- 注册 = `onMounted(fn)` → `instance.mounted.push(fn)`
+- 触发 = 渲染器在流程的固定位置**直接遍历调用**：`arr.forEach(hook => hook())`
+
+### 2.2 渲染器内部伪代码
+
+```js
+// 入口
+function patch(vnode, container) {
+  if (vnode.type.isComponent) {
+    if (!vnode.component) {
+      mountComponent(vnode)              // 首次挂载
+    } else {
+      updateComponent(vnode.component)   // 更新
+    }
+  }
+}
+
+// 挂载流程
+function mountComponent(vnode) {
+  const instance = createComponentInstance(vnode)   // 1. 创实例
+  setupComponent(instance)                          // 2. 跑 setup
+  setupRenderEffect(instance)                        // 3. 注册 effect
+}
+
+function setupRenderEffect(instance) {
+  effect(() => {
+    if (!instance.isMounted) {
+      // ---------- 首次挂载分支 ----------
+      callHook(instance.beforeMount)      // 4. 触发 onBeforeMount
+      const subTree = instance.render()   // 5. 调 render 函数
+      patch(subTree, container)           // 6. patch DOM
+      instance.isMounted = true
+      queuePostFlushCb(() => {
+        callHook(instance.mounted)        // 7. 触发 onMounted（异步）
+      })
+    } else {
+      // ---------- 更新分支 ----------
+      callHook(instance.beforeUpdate)     // 8. 触发 onBeforeUpdate
+      const nextTree = instance.render()
+      patch(prevTree, nextTree, container) // 9. diff patch
+      queuePostFlushCb(() => {
+        callHook(instance.updated)        // 10. 触发 onUpdated（异步）
+      })
+    }
+  })
+}
+
+// 卸载流程
+function unmount(instance) {
+  callHook(instance.beforeUnmount)        // 触发 onBeforeUnmount（同步）
+  // ... 卸载 DOM
+  callHook(instance.unmounted)            // 触发 onUnmounted（同步）
+}
+```
+
+## 3. 任务类型
+
+### 3.1 同步 vs 异步分类
+
+| 钩子 | 执行时机 | 同步/异步 |
+|---|---|---|
+| `onBeforeMount` | patch DOM **前** | **同步** |
+| `onMounted` | patch DOM **后** | 异步（post flush 队列，微任务） |
+| `onBeforeUpdate` | 重新 patch **前** | **同步** |
+| `onUpdated` | 重新 patch **后** | 异步（post flush 队列，微任务） |
+| `onBeforeUnmount` | 卸载 DOM **前** | **同步** |
+| `onUnmounted` | 卸载 DOM **后** | **同步** |
+| `onActivated` / `onDeactivated` | keep-alive 切换 | 同步 |
+| `onErrorCaptured` | 错误冒泡 | 同步 |
+| `onRenderTracked` / `onRenderTriggered` | effect 追踪/触发 | 同步 |
+
+### 3.2 异步钩子（mounted / updated）
+
+#### 微任务实现
+
+```js
+const resolvedPromise = Promise.resolve()
+
+function queuePostFlushCb(cb) {
+  queue.push(cb)
+  if (!currentFlushPromise) {
+    currentFlushPromise = resolvedPromise.then(flushJobs)
+  }
+}
+```
+
+post flush 队列内部用 `Promise.resolve().then(...)`，是**微任务**（不是 setTimeout 那种宏任务）。
+
+#### 为什么要异步
+
+1. **保证 DOM 已更新**——同步 patch 完 DOM 后，浏览器还没布局完成；推微任务能让用户访问 DOM 时拿到正确的尺寸、布局信息
+2. **批量更新**——同一个 tick 内的多次数据变化合并成一次 patch，只触发一次 `onUpdated`
+
+### 3.3 同步钩子
+
+#### before* 钩子为什么同步
+
+- `onBeforeMount`：必须在 patch **之前**触发，否则没意义（DOM 还没创建）
+- `onBeforeUpdate`：必须在重新 patch **之前**触发，让你能拦截/做准备工作
+- 同步调用能保证拿到当前最新的 props/state
+
+#### unmount 钩子为什么同步
+
+- 卸载是终态操作，没有"批量"或"等待布局"的需求
+- 同步触发让 cleanup 逻辑（清理定时器、事件监听）立即执行
+- 在 `v-if="false"` 场景下，组件马上要从 DOM 移除，同步触发语义更清晰
+
+#### 其他同步钩子
+
+- `onActivated` / `onDeactivated`：keep-alive 切换是直接操作，无异步需求
+- `onErrorCaptured`：错误冒泡是同步机制
+- `onRenderTracked` / `onRenderTriggered`：effect 追踪是同步流程
+
+
+
