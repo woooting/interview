@@ -538,420 +538,170 @@ ul.addEventListener('click', function(e) {
 ```
 
 本质都是在一个函数体内串行调用，事件机制本身不限制回调数量。
-# Fetch 与 Ajax
+# Fetch 与 Ajax (XHR)
 
-## 1. 设计哲学与演进
+## 1. 一句话定义
 
-Ajax 和 Fetch 的表面区别是 API 形式（回调 vs Promise），但深层差异在于**谁主导请求生命周期**。
+| | 定义 |
+|---|---|
+| **Ajax** | 基于 `XMLHttpRequest` 对象 + 事件回调，实现异步 HTTP 通信的**技术方案** |
+| **Fetch** | ES6 原生 API，基于 Promise，是 XHR 的**现代替代品** |
 
-### Ajax（XMLHttpRequest）
+## 2. 核心对比表
 
-设计于 2000 年代初，当时 Web 还没有 Promise 标准。XHR 采用了**事件驱动模型**——浏览器定义了 XHR 的底层机制（请求、就绪、完成等状态），开发者通过注册回调函数来"响应"这些事件。
+| 对比维度 | Ajax (XHR) | Fetch |
+|---------|-----------|-------|
+| **编程模型** | 事件回调（`onload` / `onerror` / `onreadystatechange`） | Promise（`.then()` / `async await`） |
+| **错误处理** | 仅网络错误进 `onerror`；HTTP 错误（404/500）进 `onload`，需手动判断 `status` | 仅网络错误 reject；HTTP 错误正常 resolve，需检查 `response.ok` |
+| **请求取消** | `xhr.abort()` — 实例方法，一次取消一个 | `AbortController` + `signal` — 信号量模式，一个信号可取消多个请求 |
+| **超时设置** | 内置 `xhr.timeout` + `ontimeout` 事件 | 无内置，需 `AbortSignal.timeout()` 或手动 `setTimeout` + `abort()` |
+| **进度监听** | 支持 `progress` / `upload.onprogress` 事件 | 不原生支持，需借助 `ReadableStream` 间接实现 |
+| **流式读取** | 不支持 | 支持 `response.body`（`ReadableStream`），实时逐块处理 |
+| **Cookie 携带** | 同域默认携带 | 默认不携带，需 `credentials: 'include'` |
+| **Service Worker** | 不支持 | 支持（SW 中唯一可用的请求 API） |
+| **重定向控制** | 默认跟随 | 可通过 `redirect: 'manual'` / `'error'` 控制 |
+| **兼容性** | IE5+ 全兼容 | IE 不支持，Chrome 42+ / Firefox 39+ / Safari 10+ |
 
-**核心模型**：一个 XHR 实例就是一个**状态机**。通过 `readyState` 追踪 5 个状态（0: 未初始化 → 1: 已建立连接 → 2: 已收到响应头 → 3: 下载中 → 4: 完成），每次状态变更触发 `readystatechange` 事件。开发者可以监听不同状态做不同处理。
+## 3. 七大核心区别逐条拆解
+
+### 3.1 编程模型：回调 vs Promise
+
+这是最根本的区别。XHR 基于事件监听，Fetch 基于 Promise 链式调用。
 
 ```javascript
+// XHR — 回调嵌套
 const xhr = new XMLHttpRequest()
-console.log(xhr.readyState) // 0 — UNSENT
-
-xhr.open('GET', '/api/data')  // 状态变为 1 — OPENED
-xhr.onreadystatechange = function() {
-  if (xhr.readyState === 4) {           // 请求完成
-    if (xhr.status === 200) {           // HTTP 状态码
-      console.log(xhr.responseText)     // 响应体文本
-    }
-  }
-}
-xhr.send()  // 状态变为 2 — HEADERS_RECEIVED → 3 — LOADING → 4 — DONE
-```
-
-### Fetch
-
-设计于 2015 年左右，ES6 已将 Promise 纳入标准。Fetch 采用 **Promise + Stream** 模型——请求是异步操作，响应是**可流式读取的数据源**。它将一次 HTTP 请求拆解为两个独立的异步阶段：
-
-1. **请求已发出**：`fetch()` 返回的 Promise 在收到**响应头**时 resolve（即使状态码是 404/500）
-2. **响应体读取中**：通过 `response.body`（`ReadableStream`）流式读取数据，或通过 `.json()`/`.text()` 等便捷方法等待完整数据
-
-```javascript
-const response = await fetch('/api/data')
-// ↑ 此时仅收到响应头，响应体还在传输中
-
-const data = await response.json()
-// ↑ 等待整个响应体下载并解析完成
-```
-
-这也解释了为什么 Fetch 默认不把 HTTP 错误码视为异常——服务端确实返回了响应（有状态码、有头信息），只是业务层面不成功而已。
-
-## 2. API 语法差异对比
-
-### 请求生命周期对比
-
-| 阶段 | Ajax | Fetch |
-|------|------|-------|
-| 初始化实例 | `new XMLHttpRequest()` | `fetch(url, options)` — 函数调用即创建 |
-| 配置请求 | `xhr.open(method, url)` + `xhr.setRequestHeader()` | `options` 对象统一传入 |
-| 发送请求 | `xhr.send(body)` | `fetch()` 调用时自动发送 |
-| 监听响应头 | `readystatechange` + 判断 `readyState >= 2` | `response` 对象 resolve 时已包含头 |
-| 监听进度 | `onprogress` 事件 | `response.body` 的 `ReadableStream` |
-| 读取响应体 | `xhr.responseText` / `xhr.response` | `response.text()` / `response.json()`（均返回 Promise） |
-
-### 完整请求示例对比
-
-**Ajax — 分步配置，事件驱动：**
-
-```javascript
-const xhr = new XMLHttpRequest()
-
-// 1. 配置请求
-xhr.open('POST', '/api/users')
-xhr.setRequestHeader('Content-Type', 'application/json')
-xhr.setRequestHeader('X-CSRF-Token', 'abc123')
-xhr.responseType = 'json'          // 自动解析 JSON
-
-// 2. 监听事件
-xhr.onload = function() {
-  if (xhr.status >= 200 && xhr.status < 300) {
-    console.log('成功:', xhr.response)
-  } else {
-    console.error('HTTP 错误:', xhr.status)
-  }
-}
-xhr.onerror = function() {
-  console.error('网络错误')
-}
-xhr.ontimeout = function() {
-  console.error('请求超时')
-}
-
-// 3. 发送
-xhr.timeout = 5000
-xhr.send(JSON.stringify({ name: 'Alice' }))
-```
-
-**Fetch — 统一配置，链式调用：**
-
-```javascript
-try {
-  const response = await fetch('/api/users', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRF-Token': 'abc123'
-    },
-    body: JSON.stringify({ name: 'Alice' }),
-    signal: AbortSignal.timeout(5000)   // 超时
-  })
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
-  }
-
-  const data = await response.json()
-  console.log('成功:', data)
-} catch (err) {
-  if (err.name === 'AbortError') {
-    console.error('请求超时或取消')
-  } else {
-    console.error('请求失败:', err)
-  }
-}
-```
-
-### 关键差异总结
-
-| 方面 | Ajax | Fetch |
-|------|------|-------|
-| 语法风格 | 命令式（一步步告诉浏览器做什么） | 声明式（描述「要什么」，返回 Promise） |
-| 配置方式 | 分散在多个属性/方法调用中 | 集中在 `options` 对象，一次传入 |
-| 错误模型 | 网络错误和 HTTP 错误都进 `onerror` | HTTP 错误不 reject，需检查 `response.ok` |
-| 响应解析 | `responseType` 属性控制自动解析 | 手动调用 `.json()/.text()` 等，返回 Promise |
-| 超时控制 | `xhr.timeout` + `ontimeout` 事件 | `AbortSignal.timeout()` + `AbortError` |
-| 取消请求 | `xhr.abort()` | `AbortController.abort()` |
-| 上传进度 | `xhr.upload.onprogress` | 不支持（需用 XHR） |
-| Cookie 发送 | 同域请求默认携带 | **默认不带**，需 `credentials: 'include'` |
-| 请求生命周期管理 | 手动管理 `readyState` 状态机 | Promise 自动管理 |
-
-## 3. 错误处理深度对比
-
-两者的错误处理差异源于底层设计：
-
-**Ajax 错误处理：**
-- `onerror` 触发条件：**网络层失败**——DNS 解析失败、连接被拒绝、连接超时（非 `timeout` 属性设置的那种）
-- HTTP 4xx/5xx 不会触发 `onerror`，而是触发 `onload`，需要通过 `xhr.status` 手动判断
-- `ontimeout` 专门处理请求超时（由 `xhr.timeout` 属性设定）
-
-```javascript
-xhr.onerror = () => console.log('触发条件：断网、DNS 解析失败、连接拒绝')
+xhr.open('GET', '/api/data')
 xhr.onload = () => {
-  // 无论 200 还是 500 都进这里
-  if (xhr.status >= 400) {
-    console.log('这是 HTTP 错误，不是网络错误')
+  if (xhr.status === 200) {
+    const data = JSON.parse(xhr.responseText)
+    // 下一个请求又要嵌套一层...
   }
 }
-```
+xhr.onerror = () => console.error('网络错误')
+xhr.send()
 
-**Fetch 错误处理：**
-- `fetch()` 返回的 Promise 仅在网络层面失败时 reject（断网、DNS 解析失败、连接拒绝）
-- HTTP 4xx/5xx 视为"请求成功但响应不完美"，Promise 正常 resolve，`response.ok` 为 `false`
-- 取消/超时通过 `AbortController` 触发 `AbortError`
-
-```javascript
-fetch('/api/data').then(response => {
-  // 状态码 404，response.ok === false，但这里正常执行
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
-  }
-  return response.json()
-}).catch(err => {
-  // 这里可能因为：断网、response.json() 解析失败、手动 throw 的 HTTP 错误
+// Fetch — async/await 扁平化
+try {
+  const res = await fetch('/api/data')
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const data = await res.json()
+} catch (err) {
   console.error(err)
-})
-```
-
-**为什么 Fetch 这样设计？** 因为 Fetch 基于 Promise 链，统一的 `.catch()` 应该仅捕获**异常情况**。HTTP 4xx/5xx 是**预期内的业务状态**，应该由开发者自己在 `.then()` 中处理。如果 Fetch 把 404 也 reject，开发者就无法区分“请求没发出去”和“请求发了但服务端返回 404”这两种场景。
-
-## 4. 请求/响应拦截器实现对比
-
-### Ajax 的拦截器原理（以 Axios 为例）
-
-Axios 本质上是一个 XHR 的 wrapper，拦截器通过**函数管道（middleware pipeline）**实现——请求拦截器数组和响应拦截器数组，每个拦截器依次传递 config 或 response：
-
-```javascript
-// Axios 内部简化逻辑
-const requestInterceptors = []
-const responseInterceptors = []
-
-// 请求发出前执行拦截器链
-let config = { url, method, headers, data }
-for (const interceptor of requestInterceptors) {
-  config = interceptor(config) // 可以修改 headers、添加 token 等
-}
-
-// 执行 XHR 请求
-xhr.send(config.data)
-
-// 响应到达后执行拦截器链
-let response = { data, status, headers }
-for (const interceptor of responseInterceptors) {
-  response = interceptor(response) // 可以统一解析、统一错误处理
 }
 ```
 
-### Fetch 实现拦截器的方式
+### 3.2 错误处理：行为一致，不要被误导
 
-Fetch 原生没有拦截器，因为它是**浏览器原生 API**，不是库。实现拦截器有几种方案：
+> **关键结论：两者行为一致——HTTP 错误（404/500）都不算"异常"。**
 
-**方案 1：包装 `fetch` 函数（推荐——不侵入全局）**
+- XHR：HTTP 错误进 `onload` 而非 `onerror`，需手动检查 `xhr.status`
+- Fetch：HTTP 错误 Promise 正常 resolve，需检查 `response.ok`（`status` 在 200-299 之间为 `true`）
 
 ```javascript
-function createFetchWithInterceptors(baseUrl) {
-  const requestInterceptors = []
-  const responseInterceptors = []
+// XHR — 404 进 onload
+xhr.onload  = () => { if (xhr.status >= 400) { /* HTTP 错误 */ } }
+xhr.onerror = () => { /* 仅断网、DNS 失败等网络层错误 */ }
 
-  async function customFetch(url, options = {}) {
-    let config = { ...options, url: baseUrl + url }
+// Fetch — 404 正常 resolve
+fetch('/api/not-found')
+  .then(res => { if (!res.ok) throw new Error('HTTP 错误') })  // ← 404 走到这里
+  .catch(err => { /* 仅断网等网络层错误 + 手动 throw */ })
+```
 
-    // 请求拦截器链
-    for (const interceptor of requestInterceptors) {
-      config = await interceptor(config)
-    }
+### 3.3 请求取消
 
-    let response = await fetch(config.url, config)
+```javascript
+// XHR — 简单直接
+xhr.abort()
 
-    // 响应拦截器链
-    for (const interceptor of responseInterceptors) {
-      response = await interceptor(response)
-    }
+// Fetch — AbortController 信号量模式，可批量取消
+const ctrl = new AbortController()
+fetch('/a', { signal: ctrl.signal })
+fetch('/b', { signal: ctrl.signal })
+ctrl.abort()  // 同时取消 a 和 b
 
-    return response
-  }
+// 超时模拟
+fetch('/api', { signal: AbortSignal.timeout(5000) })
+```
 
-  customFetch.request = (fn) => requestInterceptors.push(fn)
-  customFetch.response = (fn) => responseInterceptors.push(fn)
+### 3.4 超时
 
-  return customFetch
+- XHR：`xhr.timeout = 5000` + `xhr.ontimeout` 事件，内置支持
+- Fetch：无内置超时，推荐 `AbortSignal.timeout(5000)`，捕获 `AbortError`
+
+### 3.5 Cookie 携带
+
+- XHR：同域请求默认自动携带 Cookie
+- Fetch：**默认不携带**，跨域尤其容易踩坑。需显式设置：
+
+```javascript
+fetch('/api', { credentials: 'include' })  // 始终携带
+fetch('/api', { credentials: 'same-origin' })  // 同域携带（默认）
+fetch('/api', { credentials: 'omit' })  // 始终不携带
+```
+
+### 3.6 进度监听
+
+- XHR：`xhr.onprogress`（下载进度）、`xhr.upload.onprogress`（上传进度）
+- Fetch：不直接支持，需借助 `ReadableStream` 逐块计算
+
+```javascript
+// XHR 上传进度
+xhr.upload.onprogress = (e) => {
+  console.log(`已上传 ${e.loaded}/${e.total}`)
 }
-
-// 使用
-const api = createFetchWithInterceptors('https://api.example.com')
-
-api.request((config) => {
-  config.headers = { ...config.headers, Authorization: 'Bearer ' + getToken() }
-  return config
-})
-
-api.response(async (res) => {
-  if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.message)
-  }
-  return res.json()
-})
-
-// 调用
-const data = await api('/users')
 ```
 
-**方案 2：`Proxy` 代理全局 fetch（激进——适合监控场景）**
+### 3.7 流式读取（Fetch 独有）
+
+Fetch 的 `response.body` 是 `ReadableStream`，可逐块读取，XHR 只能等完整响应。
 
 ```javascript
-const originalFetch = window.fetch
-window.fetch = new Proxy(originalFetch, {
-  apply(target, thisArg, args) {
-    console.log('[Fetch 监控]', args[0], args[1]?.method || 'GET')
-    const start = performance.now()
-    const result = Reflect.apply(target, thisArg, args)
-    result.then(() => {
-      console.log('[Fetch 监控] 耗时:', performance.now() - start)
-    })
-    return result
-  }
-})
-```
-
-## 5. 现代特性深度解析
-
-### 5.1 流式响应（Response Streaming）
-
-Fetch 原生支持流式读取，这是 XHR 做不到的。服务端可以一边生成数据一边发送，前端可以逐块处理，不需要等完整响应到达。
-
-```javascript
-const response = await fetch('/api/large-stream')
-
-// response.body 是一个 ReadableStream
-const reader = response.body.getReader()
+const res = await fetch('/api/stream')
+const reader = res.body.getReader()
 const decoder = new TextDecoder()
 
 while (true) {
   const { done, value } = await reader.read()
   if (done) break
-
-  const chunk = decoder.decode(value, { stream: true })
-  console.log('收到一块数据:', chunk)
-  // 可以逐块渲染 UI，实现"打字机"效果
+  console.log('收到:', decoder.decode(value, { stream: true }))
 }
+// 场景：AI 对话流式输出、大文件分块下载
 ```
 
-**适用场景：** AI 对话流式输出、大文件下载进度、实时日志推送。
+## 4. 为什么 Ajax/Fetch 能实现「无刷新更新」
 
-### 5.2 请求取消（AbortController）
-
-两者都能取消请求，但机制不同：
-
-```javascript
-// XHR 取消
-const xhr = new XMLHttpRequest()
-xhr.open('GET', '/api/data')
-xhr.send()
-xhr.abort() // 直接调用，简单粗暴
-
-// Fetch 取消 — 同一 AbortController 可控制多个请求
-const controller = new AbortController()
-const signal = controller.signal
-
-fetch('/api/user', { signal })
-fetch('/api/posts', { signal })
-
-// 5 秒后同时取消两个请求
-setTimeout(() => controller.abort(), 5000)
-```
-
-**XHR 的 `abort()`** 是实例方法，一次只能取消一个请求。**Fetch 的 `AbortController`** 是信号量模式，一个信号可以关联任意多个请求，更适合竞态场景：
-
-```javascript
-// 竞态场景：用户反复切换 Tab，取消前一个未完成的请求
-let currentController
-
-function searchUsers(keyword) {
-  currentController?.abort() // 取消上一次请求
-
-  currentController = new AbortController()
-  fetch(`/api/users?q=${keyword}`, {
-    signal: currentController.signal
-  }).then(res => res.json())
-    .then(data => renderUsers(data))
-    .catch(err => {
-      if (err.name !== 'AbortError') {
-        showError(err)
-      }
-    })
-}
-```
-
-### 5.3 默认行为差异
-
-| 行为 | Ajax | Fetch |
-|------|------|-------|
-| 跨域 Cookie | 同域请求默认携带 | **默认不携带**，需 `credentials: 'include'` |
-| 跨域请求 | 支持 CORS | 同左，但 Fetch 对 CORS 限制更严格 |
-| 重定向 | 默认跟随，可通过 `xhr.redirect` 控制 | 默认跟随，可通过 `redirect: 'manual'` 控制 |
-| 缓存控制 | XHR 走 HTTP 缓存（除非加 header） | Fetch 在 `no-cors` 模式下会限制某些 header |
-
-### 5.4 兼容性与 Polyfill
-
-Ajax 兼容 IE5+，这是历史原因。Fetch 的主流兼容性如下：
-
-- Chrome 42+, Firefox 39+, Safari 10+, Edge 14+
-- **IE 全系不支持**（但 IE 已退役）
-- 需要兼容低版本浏览器时，可用 `whatwg-fetch` polyfill（原理是用 XHR 实现 Fetch API）
-
-```bash
-npm install whatwg-fetch
-```
-
-```javascript
-import 'whatwg-fetch'
-// 不支持的浏览器会自动使用 XHR 模拟的 fetch
-```
-
-## 6. 与传统请求对比（为什么 Ajax/Fetch 能无刷新更新数据）
-
-### 流程对比
-
-**传统请求**（表单提交、`<a>` 跳转）：
-1. 浏览器**卸载当前页面**，清空所有 JS/DOM 状态
-2. 向服务端发送 HTTP 请求
-3. 服务端返回**完整 HTML 文档**
-4. 浏览器**重新解析、渲染整个页面**，页面闪烁
-
-**Ajax / Fetch**：
-1. 请求由浏览器**网络线程**异步发出，不阻塞 JS 主线程
-2. 主线程继续执行其他 JS 代码，页面保持正常运行
-3. 服务端返回**纯数据（JSON/XML）或 HTML 片段**
-4. 回调进入任务队列，主线程空闲后执行回调
-5. 通过 DOM API **局部修改**需要更新的节点，浏览器仅对差异部分做增量渲染
-
-```
-传统请求：
-  点击提交 → 页面卸载 → 请求 → 服务端返回完整 HTML → 浏览器整页重渲染（闪烁）
-
-Ajax/Fetch：
-  JS 调用 → 网络线程异步发请求（不阻塞主线程）
-         → 主线程继续运行，页面正常交互
-         → 响应回调执行 → DOM 局部更新 → 仅增量渲染差异部分（无闪烁）
-```
-
-### 为什么能做到无刷新？
-
-核心原因有两个：
-
-1. **控制权在前端**：传统请求的渲染流程由浏览器导航机制驱动，开发者无法干预。Ajax/Fetch 把请求控制权交给了 JS，拿到数据后开发者可以**选择**更新哪些 DOM 节点，而不是整个页面替换。
-
-2. **异步非阻塞**：Ajax/Fetch 的请求在**浏览器网络线程**中执行，不阻塞 JS 主线程。用户仍然可以点击按钮、滚动页面、输入文字——页面始终是"活的"。而传统导航会冻结页面直到新页面加载完成。
-
-### 对比表格
-
-| | 传统请求 | Ajax / Fetch |
+| | 传统请求（表单/链接） | Ajax / Fetch |
 |---|---|---|
-| 页面是否卸载 | 是，浏览器卸载当前页面 | 否，页面始终存在 |
-| 请求谁发出 | 浏览器导航行为（地址栏/表单） | JS 通过网络线程异步发出 |
-| 阻塞主线程？ | 是，页面冻结直到新页面加载完成 | 否，异步回调，网络线程单独处理 |
-| 响应是什么 | 完整 HTML 文档 | 纯数据或 HTML 片段 |
-| 谁控制更新 | 浏览器整页替换 | 前端 JS 通过 DOM API 局部修改 |
-| 用户体验 | 闪烁、中断操作、需重新加载全部资源 | 流畅、无中断、持续交互 |
-| 资源开销 | 重下载 CSS/JS/图片等全部资源 | 仅传输必要数据，前端按需更新 |
-| 服务端职责 | 拼接完整的 HTML 页面 | 仅提供数据接口或 HTML 片段 |
-| 前后端耦合 | 强耦合，视图和逻辑混在服务端 | 松耦合，前后端通过接口约定通信 |
+| 页面 | 卸载，整页替换 | 不卸载，页面保持 |
+| 响应 | 完整 HTML 文档 | 纯数据（JSON）或 HTML 片段 |
+| 更新方式 | 浏览器全量重渲染（闪烁） | JS 通过 DOM API 局部更新（无闪烁） |
+| 阻塞 | 页面卡死直到加载完成 | 网络线程异步处理，主线程不阻塞 |
+
+**核心原因**：请求控制权交给 JS，拿到数据后开发者自行决定更新哪些 DOM 节点，而非整页替换。
+
+## 5. 面试回答模板
+
+> "Ajax 是基于 XMLHttpRequest 对象，通过事件回调实现异步通信的方式；Fetch 是 ES6 引入的原生 API，基于 Promise。
+>
+> 两者最大的区别是编程模型——一个是回调，一个是 Promise。具体差异有七个：
+>
+> **错误处理上，两者行为一致**：HTTP 404/500 都不算异常，XHR 进 `onload`、Fetch 正常 resolve，都需要手动判断 `status` / `ok`。
+>
+> **请求取消**，XHR 用 `xhr.abort()` 简单直接；Fetch 用 `AbortController` 信号量模式，一个信号可以同时取消多个请求。
+>
+> **超时**，XHR 有内置 `timeout` 属性；Fetch 没有，需要 `AbortSignal.timeout()` 或手动实现。
+>
+> **Cookie**，XHR 默认携带同源 cookie；Fetch 默认不携带，要设置 `credentials: 'include'`。
+>
+> **进度**，XHR 支持 `progress` 事件；Fetch 需要借助 Streams API 实现。
+>
+> **流式读取**，Fetch 支持 `ReadableStream`，可以逐块处理响应数据（AI 对话、大文件下载），这是 XHR 做不到的。
+>
+> **Service Worker** 中只能用 Fetch，不支持 XHR。
+>
+> 实际项目中我一般用 axios 做封装，但理解底层差异对排查问题很重要。"
 
 
 # 闭包
@@ -1068,6 +818,325 @@ function setup() {
 | 用 `WeakMap/WeakSet` 作缓存 | 键为弱引用，不影响 GC |
 | 组件卸载时清理副作用 | React `useEffect` 返回清理函数 |
 
+# js中的this
+
+## 1. this 的本质
+
+`this` 不是一个词法变量——它不是定义时决定的，而是**每次函数调用时动态创建**的一个隐式参数。同一个函数，不同调用方式 → 不同的 `this`。
+
+可以把 `this` 理解为函数执行上下文中的一个属性，由调用位置和调用方式决定。
+
+## 2. 四条绑定规则
+
+### 2.1 默认绑定
+
+裸函数调用（前面没有对象点号）时，`this` 指向全局对象。严格模式下指向 `undefined`。
+
+```javascript
+function foo() { console.log(this) }
+foo()  // window（严格模式下 undefined）
+
+const obj = { bar: function() { console.log(this) } }
+const bar = obj.bar
+bar()  // window —— 函数引用被剥离，变为裸调用
+```
+
+**隐式丢失**是最常见的坑：一旦函数从对象上取出、赋值给变量或作为回调传入，就失去了隐式绑定，退回默认绑定。
+
+### 2.2 隐式绑定
+
+以 `对象.方法()` 的形式调用时，`this` 指向调用链上的**最后一个对象**。
+
+```javascript
+const obj = {
+  name: 'obj',
+  child: {
+    name: 'child',
+    foo: function() { console.log(this.name) }
+  }
+}
+obj.child.foo()  // 'child' ← 最后一个点号前面的对象
+```
+
+### 2.3 显式绑定（call / apply / bind）
+
+通过 `call`、`apply`、`bind` 显式指定 `this`，详见下一节。
+
+### 2.4 new 绑定
+
+使用 `new` 调用构造函数时，引擎创建一个新对象作为 `this`。`new` 做了四件事：
+
+1. 创建一个空对象 `{}`
+2. 将该对象的 `[[Prototype]]` 指向构造函数的 `prototype`
+3. 将该对象作为 `this` 传入构造函数执行
+4. 如果构造函数没有返回对象，则返回这个新对象
+
+```javascript
+function Person(name) {
+  this.name = name
+}
+const p = new Person('Tom')  // this → 新创建的对象
+```
+
+**`new` 绑定 > `bind` 绑定**：即使构造函数先被 `bind` 锁死了 `this`，`new` 调用时依然会创建一个新对象覆盖 `bind` 锁定的值。
+
+## 3. 箭头函数的 this
+
+箭头函数**没有自己的 `this` 槽位**，它从外层词法作用域捕获 `this`，在定义时就确定，永久不变。
+
+```javascript
+const obj = {
+  name: 'obj',
+  fn: () => console.log(this.name),          // this → window（定义时的外层）
+  fn2: function() {
+    return () => console.log(this.name)       // this → obj（外层 fn2 的 this）
+  }
+}
+obj.fn()     // undefined（window.name）
+obj.fn2()()  // 'obj'
+```
+
+一句话：**向上找最近一层非箭头函数的 `this`**，找不到就是全局。
+
+`call`/`apply`/`bind` 对箭头函数无效——它们改变的是函数调用时的 `this`，但箭头函数根本没有这个槽位。
+
+## 4. 优先级总结
+
+```
+new 绑定  >  显式绑定（call / apply / bind）  >  隐式绑定  >  默认绑定
+```
+
+**例外**：箭头函数无视以上所有规则，`this` 固定为定义时的词法 `this`。
+
+## 5. 典型场景
+
+| 场景 | this 指向 |
+|------|----------|
+| `obj.foo()` | `obj`（隐式绑定） |
+| `foo()` | `window` / `undefined`（默认绑定） |
+| `foo.call(obj)` | `obj`（显式绑定） |
+| `new Foo()` | 新创建的对象（new 绑定） |
+| `() => this` | 定义时外层作用域的 `this`（永远的） |
+| `btn.addEventListener('click', fn)` | `btn` 元素（DOM 规范定义，非 JS 规则） |
+| `setTimeout(fn, 0)` | `window` / `undefined`（相当于裸调用） |
+| 类字段 `fn = () => ...` | 绑定为当前实例（等价于构造函数中 `this.fn = () => ...`） |
+
+## 6. 底层原理
+
+在 ECMAScript 规范中，函数调用通过内部方法 `[[Call]](thisArgument, argumentsList)` 执行，`thisArgument` 就是一条额外的隐式实参。不同调用方式决定了 `thisArgument` 的值：
+
+- **裸调用** → `undefined`（严格模式）或全局对象
+- **方法调用** `obj.foo()` → 表达式 `obj.foo` 返回的是一个 **Reference Record**（`[base: obj, name: "foo"]`），引擎从中取出 `base` 作为 `this`
+- **`call`/`apply`/`bind`** → 显式传入的值
+- **`new`** → 忽略传入的 `thisArgument`，创建新对象
+- **箭头函数** → 内部 `[[ThisMode]]` 为 `lexical`，直接跳过 `thisArgument`，引用词法环境中的 `this`
+
+**Reference Record 是理解隐式丢失的关键**：`const bar = obj.foo` 这个赋值操作不仅取了函数值，还丢弃了 Reference Record 中的 `base` 信息——函数被"提取"成了裸值，调用时无法再找回原本的 `this`。
+
+# apply、call、bind 区别及底层实现原理
+
+## 1. 语法区别
+
+```javascript
+func.call(thisArg, arg1, arg2, arg3, ...)   // 逐个传参
+func.apply(thisArg, [arg1, arg2, arg3])      // 数组传参
+func.bind(thisArg, arg1, arg2, ...)          // 返回新函数，不立即执行
+```
+
+| | call | apply | bind |
+|---|---|---|---|
+| 入参方式 | 逗号分隔，逐个传 | 数组/类数组统一传 | 逗号分隔，逐个传 |
+| 是否立即调用 | ✅ 立即调用 | ✅ 立即调用 | ❌ 返回新函数，需手动调用 |
+| 返回值 | 函数执行结果 | 函数执行结果 | 绑定了 this 的新函数 |
+| 二次绑定 | — | — | 无效，bind 锁死不可再变 |
+
+**记忆口诀**：call 用逗号，apply 用数组（A for Array），bind 返回新函数（B for bind 是"打包"）。
+
+## 2. 底层实现原理
+
+### call 实现
+
+```javascript
+Function.prototype.myCall = function(context, ...args) {
+  // 1. 处理 null/undefined → 指向全局
+  context = context ?? window
+  // 2. 将调用函数临时挂载到 context 上（作为方法）
+  const symbolKey = Symbol()
+  context[symbolKey] = this         // this 就是调用 myCall 的那个函数
+  // 3. 以 context.xxx() 的形式调用 → 触发隐式绑定 → this 指向 context
+  const result = context[symbolKey](...args)
+  // 4. 清理临时属性
+  delete context[symbolKey]
+  return result
+}
+```
+
+核心思想：**将函数挂到 context 对象上成为方法，以 `对象.方法()` 的方式调用，利用隐式绑定规则让 `this` 指向 context**。`Symbol` 确保不污染 context 的原有属性。
+
+### apply 实现
+
+原理与 call 完全相同，唯一区别是参数以数组形式接收：
+
+```javascript
+Function.prototype.myApply = function(context, args = []) {
+  context = context ?? window
+  const symbolKey = Symbol()
+  context[symbolKey] = this
+  const result = context[symbolKey](...args)
+  delete context[symbolKey]
+  return result
+}
+```
+
+### bind 实现
+
+```javascript
+Function.prototype.myBind = function(context, ...bindArgs) {
+  const originalFn = this  // 原函数
+  return function boundFn(...callArgs) {
+    // new 调用时，this 是 boundFn 的实例，应优先使用
+    // 普通调用时，使用绑定的 context
+    return originalFn.apply(
+      this instanceof boundFn ? this : context,
+      [...bindArgs, ...callArgs]
+    )
+  }
+}
+```
+
+**关键点：**
+1. `bind` 返回一个闭包函数 `boundFn`
+2. `boundFn` 内部用 `apply` 实现 this 绑定
+3. 合并 `bind` 时的参数和调用时的参数（柯里化特性）
+4. **`new` 优先级问题**：当 `new boundFn()` 时，`this instanceof boundFn` 为 `true`，使用新创建的对象而不是绑定的 context，确保 `new` 优先级高于 `bind`
+5. **不可二次绑定**：返回的 `boundFn` 不会再被 `bind` 影响（因为它只是一个普通函数，里面用 `apply` 固定了逻辑）
+
+### 为什么 bind 不可二次更改
+
+```javascript
+function fn() { console.log(this.name) }
+const bound1 = fn.bind({ name: 'A' })
+const bound2 = bound1.bind({ name: 'B' })
+bound2()  // 'A'，不是 'B'
+```
+
+原因在于 `bind` 返回的是一个新的 `boundFn`，而非原来的 `fn`。对 `bound1` 它的内部实现已经固定了对原函数的 `apply(context)`，第二次 `bind` 改变的是 `boundFn` 这个包装函数的上下文，而 `boundFn` 内部调用的始终是第一次绑定时的 `context`。
+
+### 箭头函数为何失效
+
+箭头函数没有自己的 `this`，它内部的 `this` 是从定义时词法环境捕获的常量。`call`/`apply`/`bind` 试图改变的是函数调用时的 `thisArgument` 隐式参数，但箭头函数的 `[[ThisMode]]` 是 `lexical`，引擎直接忽略这个参数——传了也白传。
+
+# 箭头函数特性
+
+## 1. 核心特性
+
+箭头函数除了语法更短，在语义上有 5 个核心差异：
+
+### 1.1 没有自己的 this（最重要的区别）
+
+箭头函数的 `this` 是从**定义时**外层词法作用域捕获的，是一个常量，永远不会变。详见 `js中的this > 箭头函数的 this`。
+
+```javascript
+const obj = {
+  name: 'obj',
+  greet: function() { setTimeout(function() { console.log(this.name) }, 100) },
+  greetArrow: function() { setTimeout(() => console.log(this.name), 100) }
+}
+obj.greet()       // undefined（普通函数 this → window）
+obj.greetArrow()  // 'obj'（箭头函数 this 继承自 greetArrow 的 this）
+```
+
+### 1.2 没有 arguments 对象
+
+箭头函数内部没有 `arguments`，需用 rest 参数替代：
+
+```javascript
+const fn = () => {
+  console.log(arguments)  // 引用外层函数的 arguments（如果有的话）
+}
+
+function outer() {
+  const inner = () => console.log(arguments)
+  inner()
+}
+outer(1, 2, 3)  // Arguments(3) [1, 2, 3] — 拿到的是 outer 的 arguments
+
+// 正确做法：用 rest 参数
+const sum = (...args) => args.reduce((a, b) => a + b, 0)
+sum(1, 2, 3)  // 6
+```
+
+### 1.3 不能用作构造函数
+
+箭头函数没有 `[[Construct]]` 内部方法，`new` 会直接抛出 TypeError：
+
+```javascript
+const Foo = () => {}
+new Foo()  // TypeError: Foo is not a constructor
+```
+
+这也意味着箭头函数没有 `prototype` 属性：
+
+```javascript
+const fn = () => {}
+console.log(fn.prototype)  // undefined
+```
+
+### 1.4 不能用作 Generator
+
+箭头函数内部不能使用 `yield`：
+
+```javascript
+const gen = () => { yield 1 }  // SyntaxError
+```
+
+### 1.5 不能用作类方法（没有 super）
+
+箭头函数没有 `[[HomeObject]]`，无法使用 `super`：
+
+```javascript
+class Parent {
+  greet() { return 'hello' }
+}
+class Child extends Parent {
+  greet = () => super.greet()  // SyntaxError
+}
+
+// 正确：普通方法或简写方法
+class Child2 extends Parent {
+  greet() { return super.greet() }  // ✅
+}
+```
+
+## 2. 与普通函数的完整对比
+
+| 特性 | 普通函数 | 箭头函数 |
+|------|---------|---------|
+| **`this`** | 调用时动态决定 | 定义时词法捕获，不可变 |
+| **`call/apply/bind`** | 可以改变 `this` | 无效，`this` 恒定 |
+| **`arguments`** | 有 | 无，需用 `...args` |
+| **`new` 调用** | ✅ 可作为构造函数 | ❌ TypeError |
+| **`prototype`** | 有（普通函数） | ❌ undefined |
+| **`super`** | 类方法中可用 | ❌ 不可用 |
+| **`yield`** | 可用（Generator） | ❌ 不可用 |
+| **语法** | `function() { return x }` | `() => x`（隐式返回表达式） |
+| **简写** | — | 单参数可省 `()`；单表达式可省 `{}` 和 `return` |
+
+## 3. 适用场景
+
+| 场景 | 推荐 | 原因 |
+|------|------|------|
+| 回调函数（定时器、事件） | ✅ 箭头函数 | 自动继承外层 `this`，省去 `bind` |
+| 对象方法 | ❌ 普通函数 | 箭头函数的 `this` 不会指向该对象 |
+| 构造函数 / 类 | ❌ 普通函数 | 箭头函数不能 `new` |
+| 数组方法（map/filter） | ✅ 均可 | 不涉及 `this` 时箭头函数更简洁 |
+| 动态 `this` 场景 | ❌ 普通函数 | 需要运行时决定 `this` 指向 |
+| 需要 `arguments` | ❌ 普通函数 | 箭头函数没有 `arguments` |
+| React 类组件方法 | ✅ 箭头函数 | 自动绑定实例，回调引用不丢失 `this` |
+| Vue methods | ✅ 普通函数 | Vue 会自动绑定 `this`，箭头函数反而拿不到 Vue 实例 |
+
+**一句话记忆**：需要自己的 `this` 用普通函数，不需要自己的 `this` 用箭头函数。
+
 # 原型与原型链
 
 ## 1. 原型（Prototype）
@@ -1095,6 +1164,7 @@ JavaScript 对象是通过引用来传递的，我们创建的每个新对象实
 以新对象作为 `this` 上下文执行构造函数，为新对象添加属性和方法。
 
 ## 4. 返回对象
+
 如果构造函数显式返回一个对象，则使用该对象作为新实例；否则返回步骤1创建的新对象。
 
 ```javascript
