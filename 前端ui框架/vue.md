@@ -616,5 +616,278 @@ post flush 队列内部用 `Promise.resolve().then(...)`，是**微任务**（�
 - `onErrorCaptured`：错误冒泡是同步机制
 - `onRenderTracked` / `onRenderTriggered`：effect 追踪是同步流程
 
+---
+
+# watch 和 watchEffect 的区别
+
+| 特性 | `watch` | `watchEffect` |
+|------|---------|---------------|
+| 数据源 | 显式指定（ref、reactive、getter） | 自动收集回调内用到的响应式依赖 |
+| 执行时机 | 数据变化后执行（lazy，默认不立即执行） | 立即执行一次，之后依赖变化时执行 |
+| 新旧值 | 可拿到 `newVal` / `oldVal` | 无参数，拿不到旧值 |
+| 副作用清理 | 手动处理 | 回调接收 `onCleanup`，自动处理竞态 |
+| 性能 | 精确控制，只监听指定源 | 自动追踪，可能收集多余依赖 |
+
+## "显式指定"的含义
+
+```js
+// watch：手动写出监听源
+watch(count, (newVal, oldVal) => { ... })
+watch([count, name], ([newC, newN], [oldC, oldN]) => { ... })
+watch(() => state.count, (newVal) => { ... })
+
+// watchEffect：框架自动追踪
+watchEffect(() => {
+  console.log(state.count, state.name)  // 用了谁就监听谁
+})
+```
+
+## 刷新时机（flush）
+
+| flush | 执行时机 | 说明 |
+|-------|----------|------|
+| `pre`（默认） | 组件 DOM 更新**前** | 批量异步，多次变化只执行一次 |
+| `post` | 组件 DOM 更新**后** | 可拿到更新后的 DOM |
+| `sync` | 依赖变化时**立即同步** | 性能差，少用 |
+
+默认异步批量执行，通过 scheduler 放入微任务队列，避免同步代码中多次修改导致重复执行。
+
+## 场景选择
+
+| 场景 | 选择 | 原因 |
+|------|------|------|
+| 需要根据新旧值做不同逻辑 | watch | watchEffect 拿不到旧值 |
+| 监听多个数据源联动 | watch | 显式控制更清晰 |
+| 数据变化后发请求，需要取消上一次 | watchEffect | `onCleanup` 自动处理竞态 |
+| 组件初始化就要执行的副作用 | watchEffect | 默认立即执行 |
+| 监听深层对象某个属性 | watch + getter | 精确控制，避免性能问题 |
+
+---
+
+# Effect 的本质与分类
+
+## 响应式变量更新后重新执行的函数叫什么？
+
+在 Vue 响应式系统中统称为 **effect（响应式函数）**。从设计模式角度（观察者模式）：
+- 响应式变量 = **发布者（Observable）**
+- 重新执行的函数 = **订阅者（Observer）**
+
+工作流程：
+```
+effect 执行 → 读取依赖 → track() 收集依赖
+依赖更新 → trigger() → 通知所有订阅者 → effect 重新执行
+```
+
+## callback 就是 effect 吗？
+
+**不完全是**。callback 是普通函数，Vue 内部通过 `effect()` 包装后才成为响应式 effect。
+
+```js
+watchEffect(() => {
+  console.log(count.value)
+})
+// callback 本身是普通函数
+// Vue 内部用 effect() 包装，才具备依赖收集和触发更新的能力
+```
+
+## Vue 所有 effect 都是异步的吗？
+
+**不是**，需要区分：
+
+| API | 本质 | 执行时机 | 是否入微任务队列 |
+|-----|------|----------|-----------------|
+| 底层 `effect`（`@vue/reactivity`） | 基础 effect | **同步立即执行** | 否 |
+| `watch` / `watchEffect` | 封装的 effect | 默认异步（`pre`），可配 `sync` 同步 | 默认是 |
+| `render` | 渲染副作用 | 异步批量更新 DOM | 是 |
+| `computed` | **派生状态**（非副作用） | **懒执行**（读取时同步计算） | **否** |
+
+底层 `effect` 没有 scheduler，依赖变化直接同步执行。`watch/watchEffect` 是在底层 `effect` 上注入了 scheduler 才实现异步批量。
+
+---
+
+# Computed 的本质
+
+## computed 是副作用吗？
+
+**不是**。`computed` 是**派生状态（Derived State）**，不是副作用。
+
+- **副作用**：与外部世界交互（修改 DOM、发请求、修改外部变量）
+- **computed**：只读取依赖、计算并返回结果，是**纯函数**
+
+```js
+// 副作用
+watchEffect(() => { document.title = count.value })
+
+// 派生状态（纯函数，无副作用）
+const double = computed(() => count.value * 2)
+```
+
+虽然 computed 的 getter 会重新执行，但它不修改任何外部状态，所以不是副作用。
+
+## computed 内部有没有 effect？
+
+**有**，但是 **lazy effect（懒执行 effect）**。
+
+| API | effect 类型 | scheduler 行为 |
+|-----|------------|---------------|
+| `watchEffect` | 普通 effect | 放入微任务队列异步执行 |
+| `watch` | 普通 effect | 放入微任务队列异步执行 |
+| `computed` | **lazy effect** | 只标记 `dirty = true`，读取时才执行 |
+| `render` | 普通 effect | 放入微任务队列异步执行 |
+
+简化实现：
+```js
+function computed(getter) {
+  let dirty = true
+  let value
+  
+  const effect = reactiveEffect(getter, {
+    lazy: true,
+    scheduler() {
+      dirty = true  // 依赖变化时，只标记 dirty
+      triggerEffects(dep)  // 通知 computed 的订阅者
+    }
+  })
+  
+  return {
+    get value() {
+      trackEffect(dep)
+      if (dirty) {
+        value = effect()  // 读取时才执行
+        dirty = false
+      }
+      return value
+    }
+  }
+}
+```
+
+## computed 的返回值是响应式变量吗？
+
+**是**。返回一个 **ref-like 响应式对象**，可以作为任何 effect 的依赖。
+
+```js
+const count = ref(1)
+const double = computed(() => count.value * 2)
+const quadruple = computed(() => double.value * 2) // computed 链式依赖
+
+watchEffect(() => {
+  console.log(quadruple.value)
+})
+```
+
+## computed 的 track/trigger 如何实现？
+
+通过 **getter/setter 属性访问器**，和 ref 基本类型的包装方式相同：
+
+```js
+// computed 内部结构（简化版）
+{
+  _value: undefined,
+  dirty: true,
+  dep: new Set(),  // 存储订阅者
+  get value() {
+    trackEffect(this.dep)   // 被访问时收集依赖
+    if (this.dirty) {
+      this._value = this.effect()  // 懒计算
+      this.dirty = false
+    }
+    return this._value
+  }
+}
+```
+
+完整流程：
+```
+1. watchEffect 执行 → 访问 double.value → track(double.dep)
+2. double 的 effect 执行 → 读取 count.value → track(count.dep)
+3. count.value = 2 → trigger(count.dep) → double 的 scheduler 执行
+4. scheduler: dirty = true, trigger(double.dep) → watchEffect 重新执行
+```
+
+## computed 为什么不用 Proxy 包装返回值？
+
+因为**不是它的职责**：
+
+1. **职责不同**：computed 的职责是"依赖变化时重新计算并缓存"，不是"让返回值变成深度响应式"
+2. **依赖方向不同**：computed 的依赖是**输入**（内部读取的响应式数据），不是**输出**（返回值）
+3. **设计原则**：computed 的返回值应该是**只读**的派生状态，用户不应该直接修改它
+4. **与 ref 的区别**：`ref(obj)` 用户会直接修改 `obj` 的属性，所以需要 Proxy；`computed` 用户不应该修改返回值，所以不需要
+
+```js
+// computed 的返回值本来就不应该被修改
+const userInfo = computed(() => ({ name: '张三' }))
+userInfo.value.name = '李四' // ❌ 这是反模式
+
+// 如果需要深度响应式，自己用 reactive 包装
+const userInfo = computed(() => reactive({ name: '张三' }))
+```
+
+---
+
+# Proxy vs getter/setter（defineProperty）
+
+## 为什么 ref 包装引用类型要用 Proxy？
+
+`ref` 的 `.value` 读写始终用 getter/setter，但 `.value` 内部的对象用 `reactive()`（Proxy）包装。
+
+## Object.defineProperty 的三个致命缺陷
+
+| 特性 | defineProperty | Proxy |
+|------|---------------|-------|
+| 新增/删除属性 | ❌ 不支持 | ✅ 支持 |
+| 数组索引/length | ❌ 支持很差 | ✅ 完美支持 |
+| 初始化性能 | ❌ 需递归遍历所有层级 | ✅ 懒代理，按需代理 |
+| 浏览器兼容性 | IE9+ | IE 不支持 |
+
+### 1. 无法拦截属性的新增和删除
+
+```js
+// Object.defineProperty 只能拦截已存在的属性
+const obj = { name: 'zs' }
+obj.name = 'ls'  // ✅ 能拦截
+obj.age = 18     // ❌ 新增属性，拦截不到！
+delete obj.name  // ❌ 删除属性，拦截不到！
+
+// Proxy 可以拦截所有操作
+const proxy = new Proxy(obj, { ... })
+proxy.age = 18     // ✅ 触发 set 拦截
+delete proxy.name  // ✅ 触发 deleteProperty 拦截
+```
+
+### 2. 无法优雅处理数组
+
+```js
+const arr = [1, 2, 3]
+
+// defineProperty 处理数组的痛点：
+arr[0] = 99      // 能拦截，但需要遍历数组每个索引初始化，性能差
+arr.length = 0   // ❌ 修改 length 拦截不到
+arr.push(4)      // ❌ push 导致 length 变化，拦截不到
+
+// Proxy 处理数组非常自然：
+proxy[0] = 99    // ✅ 触发 set
+proxy.length = 0 // ✅ 触发 set
+proxy.push(4)    // ✅ 触发 set (length 和 索引)
+```
+
+### 3. 性能问题：递归初始化 vs 懒代理
+
+```js
+const deepObj = { a: { b: { c: 1 } } }
+
+// defineProperty (Vue 2)：必须递归遍历所有层级，一次性全部代理
+walk(deepObj) // 递归初始化 a, b, c 的 getter/setter
+
+// Proxy (Vue 3)：懒代理，访问到哪一层才代理哪一层
+const proxy = new Proxy(deepObj, {
+  get(target, key) {
+    const res = target[key]
+    return isObject(res) ? reactive(res) : res  // 访问时才代理
+  }
+})
+```
+
+这也是 Vue 2 被迫提供 `Vue.set` / `Vue.delete` 的原因，Vue 3 用 Proxy 彻底解决了这个问题。
 
 

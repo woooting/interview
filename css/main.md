@@ -217,6 +217,12 @@
   text-overflow: ellipsis;  /* 显示省略号 */
   width: 200px;             /* 必须设置宽度 */
 }
+
+white-space:nowarp
+overflow:hidden
+text-flow:ellipsis
+width:200px
+
 ```
 
 ## 多行文本溢出
@@ -230,6 +236,26 @@
   text-overflow: ellipsis;      /* 省略号（可选） */
   width: 200px;                 /* 容器宽度 */
 }
+
+
+whit-space:nowrap
+overflow:hidden
+text-overflow:ellipsis
+width:200px
+-webkit-box-orient:vertical -webkit-box-orient；vertical
+-webkit-line-clamp:2
+dispaly:-webkit-box
+
+
+display:-webkit-box
+-webkit-box-orient:vertical
+-webkit-line-clamp:2
+
+whit-space:nowrap
+overflow:hidden
+text-overflow:ellipsis
+width:200px
+
 ```
 
 ---
