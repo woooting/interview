@@ -888,6 +888,453 @@ const proxy = new Proxy(deepObj, {
 })
 ```
 
-这也是 Vue 2 被迫提供 `Vue.set` / `Vue.delete` 的原因，Vue 3 用 Proxy 彻底解决了这个问题。
+ 这也是 Vue 2 被迫提供 `Vue.set` / `Vue.delete` 的原因，Vue 3 用 Proxy 彻底解决了这个问题。
+
+---
+
+# Vue 组件通信方式
+
+组件间的关系主要分为三种：**父→子、子→父、跨层级（兄弟/祖先/任意）**。不同的场景应选择不同的方案。
+
+## 1. props / $emit
+
+**场景：** 最基础、最常用的父子通信方式。父组件通过 props 向子组件传递数据，子组件通过 $emit 触发父组件的事件来通知变化。适合简单场景。
+
+```vue
+<!-- Parent.vue -->
+<template>
+  <Child :title="pageTitle" @update="handleUpdate" />
+</template>
+
+<script setup>
+import { ref } from 'vue'
+import Child from './Child.vue'
+
+const pageTitle = ref('首页')
+
+function handleUpdate(newTitle) {
+  pageTitle.value = newTitle
+}
+</script>
+```
+
+```vue
+<!-- Child.vue -->
+<template>
+  <div>
+    <h1>{{ title }}</h1>
+    <button @click="$emit('update', '新标题')">修改标题</button>
+  </div>
+</template>
+
+<script setup>
+defineProps({ title: String })
+defineEmits(['update'])
+</script>
+```
+
+**约束：** props 是单向数据流，子组件不应直接修改 props。需提交变化时通过 $emit 让父组件处理。
+
+## 2. v-model
+
+**场景：** 本质上是 props + $emit 的语法糖，适用于表单控件或需要双向绑定的自定义组件。Vue 3 支持多个 v-model 绑定。
+
+```vue
+<!-- Parent.vue -->
+<template>
+  <Child v-model:title="pageTitle" v-model:content="pageContent" />
+</template>
+
+<script setup>
+import { ref } from 'vue'
+const pageTitle = ref('首页')
+const pageContent = ref('内容')
+</script>
+```
+
+```vue
+<!-- Child.vue -->
+<template>
+  <input :value="title" @input="$emit('update:title', $event.target.value)" />
+</template>
+
+<script setup>
+defineProps({ title: String })
+defineEmits(['update:title'])
+</script>
+```
+
+Vue 3 用 `defineModel` 进一步简化：
+
+```vue
+<!-- Child.vue (Vue 3.4+) -->
+<script setup>
+const model = defineModel()
+</script>
+
+<template>
+  <input v-model="model" />
+</template>
+```
+
+## 3. $refs
+
+**场景：** 父组件需要直接调用子组件的方法或访问子组件的属性。适用于"父组件主动触发的操作"，比如手动聚焦输入框、调用子组件的重置方法。缺点是耦合度高。
+
+```vue
+<!-- Parent.vue -->
+<template>
+  <Child ref="childRef" />
+  <button @click="focusInput">聚焦子组件输入框</button>
+</template>
+
+<script setup>
+import { ref } from 'vue'
+import Child from './Child.vue'
+
+const childRef = ref()
+
+function focusInput() {
+  childRef.value.focus()
+}
+</script>
+```
+
+```vue
+<!-- Child.vue -->
+<template>
+  <input ref="inputRef" type="text" />
+</template>
+
+<script setup>
+import { ref } from 'vue'
+
+const inputRef = ref()
+
+function focus() {
+  inputRef.value.focus()
+}
+
+defineExpose({ focus })
+</script>
+```
+
+**注意：** `<script setup>` 中的变量默认不暴露给父组件，必须用 `defineExpose` 显式声明。
+
+## 4. provide / inject
+
+**场景：** 祖先向所有后代传递**不常变化**的依赖，如主题配置、国际化语言包、API 基地址、权限设置等"配置型"数据。
+
+```vue
+<!-- App.vue -->
+<script setup>
+import { provide } from 'vue'
+
+const i18n = { hello: '你好', world: '世界' }
+const theme = { primary: '#1890ff', bg: '#fff' }
+
+provide('i18n', i18n)
+provide('theme', theme)
+</script>
+```
+
+```vue
+<!-- DeepChild.vue -->
+<script setup>
+import { inject } from 'vue'
+
+const i18n = inject('i18n')
+</script>
+
+<template>
+  <div>{{ i18n.hello }}</div>
+</template>
+```
+
+**设计定位：** provide/inject 的初衷是传递**稳定的配置/依赖**，避免逐层 props 透传。它不适合做频繁变化的跨组件状态共享，原因有二：
+
+- **依赖关系隐式**：代码中追溯不出"谁 inject 了它"、"谁修改了它"，调试困难
+- **缺少规范更新路径**：不像 Pinia 有明确的 action/mutation 和 devtools
+
+> 如果数据需要被多个组件频繁读写，用 **Pinia** 或 **父组件中转**。不要把 provide 当全局 store 用。
+
+## 5. EventBus（事件总线）
+
+**场景：** 任意两个组件之间的通信，无需组件层级关系。适合简单项目中的跨组件事件通知，如"某个操作完成后通知其他组件刷新"。
+
+Vue 2 常用 `new Vue()` 实现：
+
+```js
+// eventBus.js (Vue 2)
+import Vue from 'vue'
+export const bus = new Vue()
+```
+
+```vue
+<!-- ComponentA.vue -->
+<script>
+import { bus } from './eventBus'
+export default {
+  methods: {
+    notify() {
+      bus.$emit('refresh', { id: 1 })
+    }
+  }
+}
+</script>
+```
+
+```vue
+<!-- ComponentB.vue -->
+<script>
+import { bus } from './eventBus'
+export default {
+  created() {
+    bus.$on('refresh', (data) => {
+      console.log('收到刷新通知', data)
+    })
+  },
+  beforeDestroy() {
+    bus.$off('refresh')  // 必须清理，防止内存泄漏
+  }
+}
+</script>
+```
+
+Vue 3 不再提供实例的 `$on` / `$off`，推荐使用第三方库（如 `mitt`）：
+
+```js
+// eventBus.js (Vue 3 + mitt)
+import mitt from 'mitt'
+export const bus = mitt()
+```
+
+```vue
+<script setup>
+import { onUnmounted } from 'vue'
+import { bus } from './eventBus'
+
+bus.on('refresh', (data) => { /* ... */ })
+onUnmounted(() => bus.off('refresh'))
+</script>
+```
+
+**缺点：** 事件满天飞时难以维护，不明确谁触发谁监听，大型项目不推荐。
+
+## 6. Vuex / Pinia（状态管理）
+
+**场景：** 复杂的状态共享，如用户登录信息、购物车、全局配置等。适合中大型项目，有规范的更新流程和开发者工具支持。
+
+### Pinia（Vue 3 推荐）
+
+```js
+// stores/user.js
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+
+export const useUserStore = defineStore('user', () => {
+  const token = ref('')
+  const userInfo = ref(null)
+
+  function login(credentials) {
+    // 调用登录 API
+    token.value = 'xxx'
+    userInfo.value = { name: '张三' }
+  }
+
+  function logout() {
+    token.value = ''
+    userInfo.value = null
+  }
+
+  return { token, userInfo, login, logout }
+})
+```
+
+```vue
+<!-- AnyComponent.vue -->
+<script setup>
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
+
+function handleLogin() {
+  userStore.login({ username: 'admin', password: '123' })
+}
+</script>
+
+<template>
+  <div>{{ userStore.userInfo?.name }}</div>
+</template>
+```
+
+### Vuex（Vue 2 / 旧项目）
+
+```js
+// store/index.js
+import Vue from 'vue'
+import Vuex from 'vuex'
+
+Vue.use(Vuex)
+
+export default new Vuex.Store({
+  state: { count: 0 },
+  mutations: {
+    increment(state) { state.count++ }
+  },
+  actions: {
+    incrementAsync({ commit }) {
+      setTimeout(() => commit('increment'), 1000)
+    }
+  }
+})
+```
+
+```vue
+<!-- AnyComponent.vue -->
+<script>
+export default {
+  computed: {
+    count() { return this.$store.state.count }
+  },
+  methods: {
+    add() { this.$store.commit('increment') }
+  }
+}
+</script>
+```
+
+**选择：** 新项目用 Pinia（更轻量、完整 TS 支持、无 mutation），老项目保持 Vuex。
+
+## 7. $attrs
+
+**场景：** 组件封装时，将父组件传入但未声明的属性和事件自动传递到子组件。常用于高阶组件、UI 库二次封装。
+
+```vue
+<!-- BaseInput.vue -->
+<template>
+  <input v-bind="$attrs" />
+</template>
+
+<script setup>
+// 不声明 props，所有传入属性都会在 $attrs 中
+</script>
+```
+
+```vue
+<!-- Parent.vue -->
+<template>
+  <BaseInput type="text" placeholder="请输入姓名" maxlength="10" />
+</template>
+```
+
+Vue 3 中 `$attrs` 包含 class、style、事件监听器等所有外传属性。配合 `inheritAttrs: false` 可控制标签继承行为。
+
+## 8. slot / 作用域插槽
+
+**场景：** 父组件向子组件传递模板内容。适合布局组件、列表项自定义、弹窗内容分发等场景。
+
+```vue
+<!-- Card.vue -->
+<template>
+  <div class="card">
+    <header><slot name="header" /></header>
+    <main><slot /></main>
+    <footer><slot name="footer" /></footer>
+  </div>
+</template>
+```
+
+```vue
+<!-- Parent.vue -->
+<template>
+  <Card>
+    <template #header>标题</template>
+    <p>默认插槽内容</p>
+    <template #footer>底部信息</template>
+  </Card>
+</template>
+```
+
+**作用域插槽：** 子组件向父组件传递数据，让父组件决定渲染方式。
+
+```vue
+<!-- List.vue -->
+<template>
+  <ul>
+    <li v-for="item in items" :key="item.id">
+      <slot :item="item" :index="index" />
+    </li>
+  </ul>
+</template>
+
+<script setup>
+defineProps({ items: Array })
+</script>
+```
+
+```vue
+<!-- Parent.vue -->
+<template>
+  <List :items="list">
+    <template #default="{ item, index }">
+      <span>{{ index + 1 }}. {{ item.name }}</span>
+    </template>
+  </List>
+</template>
+```
+
+## 9. $parent / $children
+
+**场景：** 直接访问父组件或子组件的实例。Vue 3 移除了 `$children`，Vue 2 可用但耦合度高，不推荐。
+
+```vue
+<!-- Vue 2 -->
+<script>
+export default {
+  mounted() {
+    this.$parent.someMethod()    // 访问父组件
+    this.$children[0].someMethod() // 访问第一个子组件（Vue 3 不可用）
+  }
+}
+</script>
+```
+
+Vue 3 中如需访问子组件实例，用 `$refs` 替代。
+
+## 10. 全局挂载
+
+**场景：** 将全局配置、工具函数等挂载到 Vue 实例上，所有组件通过 `this.xxx` 或 `xxx` 直接访问。
+
+```js
+// Vue 2
+Vue.prototype.$api = apiService
+Vue.prototype.$utils = utils
+
+// Vue 3
+const app = createApp(App)
+app.config.globalProperties.$api = apiService
+app.config.globalProperties.$utils = utils
+```
+
+**注意：** 全局挂载污染全局命名空间，仅适合真正全局不变的内容（如 axios 实例、工具函数），业务数据慎用。
+
+---
+
+## 选型建议
+
+| 组件关系 | 推荐方案 |
+|---------|---------|
+| 父→子 传递数据 | props |
+| 子→父 通知变化 | $emit |
+| 父子双向绑定 | v-model |
+| 父调用子方法 | $refs + defineExpose |
+| 祖先→后代 跨多层 | provide / inject |
+| 任意组件 简单通知 | EventBus（mitt） |
+| 任意组件 复杂状态 | Pinia / Vuex |
+| 组件封装 透传属性 | $attrs |
+| 组件模板自定义 | slot / 作用域插槽 |
+
+> 优先用 props / emit，保持数据流清晰。项目复杂度提升后再引入 Pinia，不要一开始就用全局状态管理。
 
 
