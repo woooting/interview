@@ -34,7 +34,7 @@ Cache-Control的主要属性值包括：
 
 ## 协商缓存
 
-协商缓存是通过设置请求头中的Last-Modified（If-Modified-Since）、ETag （If-None-Match）来控制的。其中请求头Last-Modified（If-Modified-Since）是http1.0中设置的请求头，ETag （If-None-Match）是http1.1推出的新的协商缓存请求头，现代浏览器大部分情况下使用ETag （If-None-Match）来控制协商缓存。
+协商缓存通过服务端返回的响应头 `Last-Modified`/`ETag`，与浏览器后续请求自动携带的请求头 `If-Modified-Since`/`If-None-Match` 配合控制。其中 `Last-Modified`/`If-Modified-Since` 是 HTTP/1.0 引入的机制，`ETag`/`If-None-Match` 是 HTTP/1.1 推出的新方案（更精确），现代浏览器大部分情况下优先使用 ETag。
 
 ### Last-Modified / If-Modified-Since
 
