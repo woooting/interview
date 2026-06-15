@@ -1,3 +1,862 @@
+# 堆内存与栈内存
+
+## 1. 栈与堆概述
+
+### 1.1 栈内存
+
+栈是**连续内存**区域，采用**后进先出（LIFO）**结构，由系统自动分配和释放，速度快。用于存储基本类型值和引用类型的地址指针。
+
+- **大小固定**：编译时确定，每个变量所需空间已知
+- **自动管理**：函数调用时入栈分配，返回时自动弹栈释放
+- **访问快速**：连续内存布局，通过栈指针偏移直接读写
+
+### 1.2 堆内存
+
+堆是**非连续内存**区域，大小动态，需垃圾回收器（GC）自动回收，速度较慢。用于存储**引用类型的实际数据**。
+
+- **大小不固定**：对象的属性可动态增删，运行时分配
+- **生命周期不定**：可能被函数外部引用，不能随函数结束自动释放
+- **通过GC回收**：当没有引用指向对象时，GC 在合适时机回收
+
+### 1.3 完整对比
+
+| 维度 | 栈 | 堆 |
+|------|-----|-----|
+| 结构 | 连续内存，LIFO | 非连续内存 |
+| 分配方式 | 编译时确定，自动分配 | 运行时动态分配 |
+| 释放方式 | 函数返回自动弹栈 | 垃圾回收器（GC） |
+| 速度 | 快 | 慢 |
+| 空间大小 | 小（~1MB） | 大（GB 级） |
+| 存储内容 | 基本类型 + 引用地址 | 引用类型实际数据 |
+| 线程安全 | 每个线程独立栈 | 堆共享，需同步机制 |
+
+## 2. 引用类型为何存在堆上
+
+### 2.1 三个原因
+
+**大小不确定**：对象可动态增删属性，编译时无法确定大小，栈要求编译时知道每个变量占多少字节。
+
+```javascript
+const obj = {}
+obj.a = 1
+obj.b = { c: { d: [1, 2, 3] } }
+```
+
+**生命周期不确定**：对象可能被函数外部引用（闭包、全局变量），不能随函数结束销毁。栈的生命周期固定为函数调用期间。
+
+```javascript
+function createUser() {
+  const user = { name: 'Tom' }
+  return user
+}
+const u = createUser()  // 栈帧已销毁，堆上的 user 仍存活
+```
+
+**引用共享**：同一对象可能被多个变量引用，栈只存地址，多个栈帧中的地址指向同一堆内存。
+
+```javascript
+const a = { value: 1 }
+const b = a
+a.value = 2
+console.log(b.value)  // 2 — 共享堆中的同一份数据
+```
+
+### 2.2 变量赋值的本质
+
+```javascript
+let num = 42        // 栈：存值 42
+let obj = { a: 1 }  // 栈：存地址 → 堆：存 { a: 1 }
+
+let num2 = num      // 栈：复制值（独立副本）
+let obj2 = obj      // 栈：复制地址（指向堆中同一对象）
+
+num2 = 100          // 不影响 num
+obj2.a = 2          // obj.a 也变成 2
+```
+
+```
+             栈内存                        堆内存
+    ┌──────────────────┐          ┌──────────────────┐
+    │  num: 42          │          │                  │
+    │  obj: ─────────────┼─────────┼─→│ { a: 1 }     │ │
+    │  num2: 100        │          │  └─────────────┘ │
+    │  obj2: ────────────┼─────────┼─→      ↑         │
+    └──────────────────┘          │       共享        │
+                                  └──────────────────┘
+```
+
+### 2.3 闭包与堆内存
+
+闭包中的变量虽然声明在函数内，但被内部函数引用后，会被提升到**堆上存储**。因为栈帧释放后闭包还需要持有这些变量。
+
+```javascript
+function outer() {
+  let count = 0       // count 不在栈上，而在堆上（闭包将其"闭包化"）
+  return function inner() {
+    count++
+    return count
+  }
+}
+const fn = outer()    // outer 栈帧释放，但 count 仍在堆上存活
+```
+
+## 3. 栈溢出（Stack Overflow）
+
+函数调用嵌套过深导致栈空间耗尽时发生。浏览器约 1~2MB，Node.js 默认约 984KB。
+
+```javascript
+function infinite() { return infinite() }
+infinite()  // RangeError: Maximum call stack size exceeded
+```
+
+## 4. 面试总结
+
+> "栈是连续内存，LIFO 结构，编译时确定大小，自动分配释放，速度快，存基本类型和引用地址；
+> 堆是非连续内存，运行时动态分配，GC 回收，速度慢，存引用类型实际数据。
+> 引用类型必须放堆上，因为对象大小不确定、生命周期不固定、需要引用共享——栈无法满足。
+> 闭包中的变量看似在函数内，但其实也被提升到了堆上，确保函数执行完后变量仍存活。"
+
+
+# js判断数据类型的四种方式
+
+## 1. typeof
+
+`typeof` 操作符返回一个表示数据类型的字符串。其底层实现是通过判断变量在内存中的**类型标签（Type Tag）**来区分基本类型。JavaScript 引擎内部使用低位二进制位存储类型信息：
+
+- `000`：对象（Object）
+- `1`：整数（Int）
+- `010`：浮点数（Double）
+- `100`：字符串（String）
+- `110`：布尔值（Boolean）
+- `-2^30`：undefined（即全 0，但特殊标记）
+
+```javascript
+typeof 42          // "number"
+typeof 'hello'     // "string"
+typeof true        // "boolean"
+typeof undefined   // "undefined"
+typeof Symbol()    // "symbol"
+typeof 10n         // "bigint"
+typeof function(){}  // "function"
+```
+
+**特殊情况与局限：**
+
+- **无法精准判断引用类型**：`typeof` 对数组、对象、正则、Date 等引用类型统一返回 `"object"`，无法进一步区分。
+- **`typeof null` 返回 `"object"`**：这是一个历史遗留 Bug。在 JS 底层存储中，`null` 的机器码全为 0，而对象类型标签也是 `000`，导致 `typeof null` 错误地返回 `"object"`。
+
+```javascript
+typeof null           // "object"  ← 历史遗留Bug
+typeof []             // "object"
+typeof {}             // "object"
+typeof /regex/        // "object"
+typeof new Date()     // "object"
+```
+
+## 2. instanceof
+
+`instanceof` 操作符通过**原型链查找**来判断数据类型，检测左边对象的原型链上是否存在右边构造函数的 `prototype`。主要用于判断引用类型数据。
+
+```javascript
+[] instanceof Array           // true
+{} instanceof Object          // true
+new Date() instanceof Date    // true
+function(){} instanceof Function  // true
+
+// 原型链上的构造函数都会返回 true
+[] instanceof Object          // true（Array 的原型链上有 Object.prototype）
+```
+
+**局限：**
+
+- 不能判断基本类型（如 `123 instanceof Number` 返回 `false`）。
+- 跨 iframe / 跨窗口环境下，不同执行上下文有独立的构造函数，`instanceof` 会失效。
+
+## 3. Array.isArray
+
+`Array.isArray()` 是 `Array` 构造函数的**静态方法**，专门用于判断一个值是否为数组，返回布尔值。弥补了 `typeof` 和 `instanceof` 在判断数组时的不足。
+
+```javascript
+Array.isArray([])                // true
+Array.isArray(new Array())       // true
+Array.isArray({})                // false
+Array.isArray('hello')           // false
+Array.isArray(arguments)         // false（类数组但不是数组）
+
+// 跨 iframe 环境下依然可靠（不依赖原型链）
+```
+
+## 4. Object.prototype.toString.call
+
+这是判断数据类型**最准确**的方法。通过调用 `Object.prototype` 上的 `toString` 方法，返回 `[object Xxx]` 格式的字符串，其中 `Xxx` 为内部 `[[Class]]` 属性的值。
+
+```javascript
+Object.prototype.toString.call(42)           // "[object Number]"
+Object.prototype.toString.call('hello')      // "[object String]"
+Object.prototype.toString.call(true)         // "[object Boolean]"
+Object.prototype.toString.call(undefined)    // "[object Undefined]"
+Object.prototype.toString.call(null)         // "[object Null]"
+Object.prototype.toString.call([])           // "[object Array]"
+Object.prototype.toString.call({})           // "[object Object]"
+Object.prototype.toString.call(function(){}) // "[object Function]"
+Object.prototype.toString.call(new Date())   // "[object Date]"
+Object.prototype.toString.call(/regex/)      // "[object RegExp]"
+Object.prototype.toString.call(new Map())    // "[object Map]"
+Object.prototype.toString.call(new Set())    // "[object Set]"
+Object.prototype.toString.call(Symbol())     // "[object Symbol]"
+```
+
+**为什么必须用 `call`？** 因为数组、字符串等类型重写了自身的 `toString` 方法，直接调用会返回不同的结果（如数组的 `toString()` 返回以逗号拼接的元素字符串）。必须借用 `Object.prototype` 原生的 `toString` 才能拿到内部类型标记。
+
+## 总结
+
+| 方法 | 判断范围 | 优缺点 |
+|------|---------|--------|
+| `typeof` | 基本类型 + function | 快速简单，无法区分引用类型，`null` 误判 |
+| `instanceof` | 引用类型 | 基于原型链，无法判断基本类型，跨 iframe 失效 |
+| `Array.isArray` | 仅数组 | 数组判断专用，跨 iframe 可靠 |
+| `Object.prototype.toString.call` | 所有类型 | 最全面准确，写法稍长 |
+
+
+# 原型与原型链
+
+## 1. 原型（Prototype）
+每个对象都有一个**内部(**指针) `[[Prototype]]`（可通过 `__proto__` 或 `Object.getPrototypeOf()` 访问），它是一个**引用**，指向另一个对象。对于通过构造函数创建的实例，这个引用指向构造函数的 `prototype` 属性所引用的对象。
+
+构造函数的 `prototype` 属性本身是一个对象，包含可被所有实例共享的属性和方法。
+
+## 2. 原型链（Prototype Chain）
+当访问对象属性时，如果对象自身没有，就沿着内部引用 `[[Prototype]]` 向上查找，直到找到属性或到达原型链末端（通常是 `Object.prototype`，其 `[[Prototype]]` 为 `null`）。这个查找路径就是原型链。
+
+## 3. 特点
+
+JavaScript 对象是通过引用来传递的，我们创建的每个新对象实体中并没有一份属于自己的原型副本。当我们修改原型时，与之相关的对象也会继承这一改变。
+
+
+# new 操作符内部工作步骤
+
+## 1. 创建空对象
+
+创建一个新的空对象（`{}`）。
+
+## 2. 设置原型
+将新对象的内部 `[[Prototype]]` 引用指向构造函数的 `prototype` 对象。
+
+## 3. 执行构造函数
+以新对象作为 `this` 上下文执行构造函数，为新对象添加属性和方法。
+
+## 4. 返回对象
+
+如果构造函数显式返回一个对象，则使用该对象作为新实例；否则返回步骤1创建的新对象。
+
+```javascript
+// 实现一个 myNew 函数，模仿 JavaScript 中的 new 操作符的行为。
+// this 在js中 是动态绑定的，但是new操作符创建出来的对象会强制this指向本身，于是我们需要手动改变this执行
+// 所以我们 只能在 bind apply call 这三个方法中选择一个来改变this指向
+// 1. bind方法会返回一个新的函数，而不是直接调用函数，所以不适合我们在这里使用
+// 2. apply方法会接受一个参数数组，并作为参数传递给调用函数
+function myNew(constructorFn, ...args) {
+  // 创建一个新对象，并将其原型指向构造函数的 prototype 属性
+  const newObj = {};
+  // Object.setPrototypeOf() 方法设置一个指定的原型对象和属性到一个指定的对象上，返回修改后的对象。
+  Object.setPrototypeOf(newObj, constructorFn);
+  // 使用 apply 方法调用构造函数，并将新对象作为 this 传入，同时传递剩余的参数
+  const res = constructorFn.apply(newObj, args);
+  // 如果构造函数返回一个对象，则使用该对象作为结果；否则，使用新创建的对象作为结果
+  return res instanceof Object ? res : newObj;
+}
+```
+
+
+# 执行上下文、作用域与闭包
+
+## 1. 执行上下文（Execution Context）
+
+### 1.1 三种执行上下文
+
+| 类型 | 创建时机 |
+|------|---------|
+| **全局执行上下文** | JS 引擎启动时创建，只有一个，压入栈底 |
+| **函数执行上下文** | 每次调用函数时创建，函数执行完毕弹出 |
+| **eval 执行上下文** | `eval()` 代码执行时创建（不推荐使用） |
+
+### 1.2 执行上下文的组成
+
+每个执行上下文包含三个核心部分：
+
+```
+执行上下文
+├── 词法环境（LexicalEnvironment）
+│   ├── 环境记录（Environment Record）
+│   │   ├── 声明式环境记录 → let、const、函数声明
+│   │   └── 对象式环境记录 → 全局对象（window/globalThis）
+│   └── 外部词法环境引用（[[OuterEnv]]） → 指向外层词法环境（形成作用域链）
+│
+├── 变量环境（VariableEnvironment）
+│   ├── 环境记录 → var 声明的变量
+│   └── 外部词法环境引用
+│
+└── this 绑定
+```
+
+**词法环境 vs 变量环境的区别：**
+
+| | 词法环境 | 变量环境 |
+|---|---|---|
+| 用于 | `let`、`const` 声明 | `var`、函数声明（function declaration） |
+| 初始化 | 声明提升但**不初始化**（暂时性死区） | 声明提升并初始化为 `undefined`（可提前访问） |
+
+### 1.3 执行上下文的生命周期
+
+```javascript
+// 全局执行上下文：JS 引擎启动时创建，页面关闭时销毁
+var a = 1
+let b = 2   // b 在词法环境中
+
+function foo() {
+  var c = 3   // c 在变量环境中
+  let d = 4   // d 在词法环境中（外层函数的作用域）
+  if (true) {
+    let e = 5 // e 在块级词法环境中（块级作用域）
+  }
+}
+foo()
+```
+
+---
+
+## 2. 作用域与作用域链
+
+### 2.1 作用域的定义
+
+作用域是变量和函数的**可访问范围**，决定了代码在何处可以访问某个变量。JS 采用**词法作用域（静态作用域）**——变量的作用域在代码编写（定义）时就已经确定，而非在运行时。
+
+### 2.2 作用域的种类
+
+| 作用域类型 | 范围 | 识别方式 |
+|-----------|------|---------|
+| **全局作用域** | 整个程序 | 代码最外层，或未在任何函数/块中定义的变量 |
+| **函数作用域** | 函数内部 | 以 `function` 关键字或箭头函数定义的函数体 |
+| **块级作用域** | `{}` 内部 | `let` / `const` 在 `{}` 内声明即产生块级作用域 |
+
+### 2.3 作用域链
+
+当访问一个变量时，JS 引擎先从当前作用域查找，如果没找到，就通过词法环境中的**外部环境引用（[[OuterEnv]]）**逐层向外查找，直到全局作用域。这条查找路径就是**作用域链**。
+
+```
+当前作用域 → 外层作用域 → 更外层作用域 → ... → 全局作用域（尽头）
+```
+
+```javascript
+const globalVar = '全局'
+function outer() {
+  const outerVar = '外层'
+  function inner() {
+    const innerVar = '内层'
+    console.log(innerVar)   // 当前作用域 → 找到
+    console.log(outerVar)   // 当前作用域未找到 → 沿作用域链向外 → outer 中找到
+    console.log(globalVar)  // 当前 → outer → 全局中找到
+  }
+  inner()
+}
+outer()
+```
+
+---
+
+## 3. let / const / var 区别（结合作用域）
+
+### 3.1 核心区别
+
+| 特性 | `var` | `let` | `const` |
+|------|-------|-------|---------|
+| **作用域** | 函数作用域（无视 `{}`） | 块级作用域 | 块级作用域 |
+| **变量提升** | 提升，初始化为 `undefined` | 提升，但未初始化（TDZ） | 提升，但未初始化（TDZ） |
+| **重复声明** | 允许 | 不允许 | 不允许 |
+| **重新赋值** | 允许 | 允许 | 不允许（必须初始化） |
+| **挂载到全局** | 会（`window.xxx`） | 不会 | 不会 |
+
+### 3.2 变量提升（Hoisting）与暂时性死区（TDZ）
+
+```javascript
+// var 提升：声明提升到作用域顶部，初始化为 undefined
+console.log(a)  // undefined（不会报错）
+var a = 1
+
+// let / const 提升但不初始化：存在暂时性死区
+console.log(b)  // ReferenceError: Cannot access 'b' before initialization
+let b = 2
+```
+
+TDZ 从作用域开始到变量声明语句之间，该变量处于"暂时性死区"，在此期间访问会抛出 `ReferenceError`。
+
+### 3.3 经典面试题：循环中的 var 与 let
+
+```javascript
+// 面试题：以下代码输出什么？
+for (var i = 0; i < 5; i++) {
+  setTimeout(() => console.log(i), 0)
+}
+// 输出：5 5 5 5 5
+
+// 为什么？var i 是函数作用域，整个循环共享同一个 i
+// 循环结束后 i = 5，五个 setTimeout 回调执行时都访问到同一个 i
+
+// 如何修复？
+// 方案一：用 let（块级作用域，每次迭代创建独立绑定）
+for (let i = 0; i < 5; i++) {
+  setTimeout(() => console.log(i), 0)
+}
+// 输出：0 1 2 3 4
+
+// 方案二：闭包（IIFE，创建独立作用域）
+for (var i = 0; i < 5; i++) {
+  ((j) => setTimeout(() => console.log(j), 0))(i)
+}
+// 输出：0 1 2 3 4
+```
+
+**执行上下文角度解释**：每次 `for` 循环迭代，用 `let` 声明时都会创建一个新的词法环境，将当前 `i` 的值绑定到该环境中；而 `var` 声明在函数作用域中只有一份绑定，所有回调共享同一个变量。
+
+---
+
+## 4. 闭包（Closure）
+
+### 4.1 闭包的定义
+
+闭包是指函数**记住并访问其词法作用域**的能力——即使函数在其词法作用域之外执行。
+
+核心机制：函数在定义时，内部的 `[[Environment]]` 属性记录了当前词法环境的引用，使得函数可以持续访问外层作用域的变量，即使外层函数已经执行完毕。
+
+```javascript
+function outer() {
+  let count = 0
+  return function inner() {
+    count++          // inner 通过 [[Environment]] 找到 outer 的词法环境
+    return count
+  }
+}
+const counter = outer()   // outer 执行完毕，但 count 不会被 GC 回收
+console.log(counter())     // 1
+console.log(counter())     // 2
+// outer 的执行上下文已弹出栈，但 outer 的词法环境仍被 inner 持有引用
+```
+
+### 4.2 闭包的应用场景
+
+#### 防抖（Debounce）
+
+```javascript
+function debounce(fn, delay) {
+  let timer = null
+  return function (...args) {
+    clearTimeout(timer)
+    timer = setTimeout(() => fn.apply(this, args), delay)
+  }
+}
+```
+
+#### 节流（Throttle）
+
+```javascript
+function throttle(fn, interval) {
+  let last = 0
+  return function (...args) {
+    const now = Date.now()
+    if (now - last >= interval) {
+      last = now
+      fn.apply(this, args)
+    }
+  }
+}
+```
+
+#### 私有变量
+
+```javascript
+function createCounter() {
+  let count = 0
+  return {
+    increment: () => ++count,
+    decrement: () => --count,
+    get: () => count
+  }
+}
+```
+
+#### 函数柯里化
+
+```javascript
+function curry(fn) {
+  return function curried(...args) {
+    if (args.length >= fn.length) return fn(...args)
+    return (...next) => curried(...args, ...next)
+  }
+}
+```
+
+### 4.3 闭包与内存泄漏
+
+闭包本身不泄漏，泄漏的是**被闭包持有且永远不会被释放的引用**。常见场景：
+
+```javascript
+// 泄漏场景：全局变量持有闭包，闭包持有大对象
+let leak = null
+function setup() {
+  const bigData = new Array(1000000)
+  leak = function() {
+    console.log(bigData.length)
+  }
+}
+```
+
+**如何定位：**
+
+**Chrome DevTools Memory 面板：**
+1. 录制堆快照（Heap Snapshot），搜索 `(closure)` 查看闭包详情
+2. 对比两个快照（操作前后），看哪些对象未被回收
+3. Performance 面板录制，勾选 Memory，观察内存曲线是否持续上升不回落
+
+**关键排查对象：**
+- 全局变量引用的闭包
+- 未移除的事件监听器（`Elements` → `Event Listeners`）
+- 未清理的定时器
+- 闭包中引用的已移除 DOM 元素
+
+**如何防范与解决：**
+
+| 做法 | 说明 |
+|------|------|
+| 避免将闭包赋值给**全局变量** | 全局引用不会被 GC 回收 |
+| 及时清理事件监听 | `removeEventListener` 移除不再需要的监听 |
+| 及时清理定时器 | `clearInterval` / `clearTimeout` |
+| 不再需要时**置 null** | 切断闭包中的引用链 |
+| 用 `WeakMap/WeakSet` 作缓存 | 键为弱引用，不影响 GC |
+| 组件卸载时清理副作用 | React `useEffect` 返回清理函数 |
+
+
+# js中的this
+
+## 1. this 的本质
+
+`this` 不是一个词法变量——它不是定义时决定的，而是**每次函数调用时动态创建**的一个隐式参数。同一个函数，不同调用方式 → 不同的 `this`。
+
+可以把 `this` 理解为函数执行上下文中的一个属性，由调用位置和调用方式决定。
+
+## 2. 四条绑定规则
+
+### 2.1 默认绑定
+
+裸函数调用（前面没有对象点号）时，`this` 指向全局对象。严格模式下指向 `undefined`。
+
+```javascript
+function foo() { console.log(this) }
+foo()  // window（严格模式下 undefined）
+
+const obj = { bar: function() { console.log(this) } }
+const bar = obj.bar
+bar()  // window —— 函数引用被剥离，变为裸调用
+```
+
+**隐式丢失**是最常见的坑：一旦函数从对象上取出、赋值给变量或作为回调传入，就失去了隐式绑定，退回默认绑定。
+
+### 2.2 隐式绑定
+
+以 `对象.方法()` 的形式调用时，`this` 指向调用链上的**最后一个对象**。
+
+```javascript
+const obj = {
+  name: 'obj',
+  child: {
+    name: 'child',
+    foo: function() { console.log(this.name) }
+  }
+}
+obj.child.foo()  // 'child' ← 最后一个点号前面的对象
+```
+
+### 2.3 显式绑定（call / apply / bind）
+
+通过 `call`、`apply`、`bind` 显式指定 `this`，详见下一节。
+
+### 2.4 new 绑定
+
+使用 `new` 调用构造函数时，引擎创建一个新对象作为 `this`。`new` 做了四件事：
+
+1. 创建一个空对象 `{}`
+2. 将该对象的 `[[Prototype]]` 指向构造函数的 `prototype`
+3. 将该对象作为 `this` 传入构造函数执行
+4. 如果构造函数没有返回对象，则返回这个新对象
+
+```javascript
+function Person(name) {
+  this.name = name
+}
+const p = new Person('Tom')  // this → 新创建的对象
+```
+
+**`new` 绑定 > `bind` 绑定**：即使构造函数先被 `bind` 锁死了 `this`，`new` 调用时依然会创建一个新对象覆盖 `bind` 锁定的值。
+
+## 3. 箭头函数的 this
+
+箭头函数**没有自己的 `this` 槽位**，它从外层词法作用域捕获 `this`，在定义时就确定，永久不变。
+
+```javascript
+const obj = {
+  name: 'obj',
+  fn: () => console.log(this.name),          // this → window（定义时的外层）
+  fn2: function() {
+    return () => console.log(this.name)       // this → obj（外层 fn2 的 this）
+  }
+}
+obj.fn()     // undefined（window.name）
+obj.fn2()()  // 'obj'
+```
+
+一句话：**向上找最近一层非箭头函数的 `this`**，找不到就是全局。
+
+`call`/`apply`/`bind` 对箭头函数无效——它们改变的是函数调用时的 `this`，但箭头函数根本没有这个槽位。
+
+## 4. 优先级总结
+
+```
+new 绑定  >  显式绑定（call / apply / bind）  >  隐式绑定  >  默认绑定
+```
+
+**例外**：箭头函数无视以上所有规则，`this` 固定为定义时的词法 `this`。
+
+## 5. 典型场景
+
+| 场景 | this 指向 |
+|------|----------|
+| `obj.foo()` | `obj`（隐式绑定） |
+| `foo()` | `window` / `undefined`（默认绑定） |
+| `foo.call(obj)` | `obj`（显式绑定） |
+| `new Foo()` | 新创建的对象（new 绑定） |
+| `() => this` | 定义时外层作用域的 `this`（永远的） |
+| `btn.addEventListener('click', fn)` | `btn` 元素（DOM 规范定义，非 JS 规则） |
+| `setTimeout(fn, 0)` | `window` / `undefined`（相当于裸调用） |
+| 类字段 `fn = () => ...` | 绑定为当前实例（等价于构造函数中 `this.fn = () => ...`） |
+
+## 6. 底层原理
+
+在 ECMAScript 规范中，函数调用通过内部方法 `[[Call]](thisArgument, argumentsList)` 执行，`thisArgument` 就是一条额外的隐式实参。不同调用方式决定了 `thisArgument` 的值：
+
+- **裸调用** → `undefined`（严格模式）或全局对象
+- **方法调用** `obj.foo()` → 表达式 `obj.foo` 返回的是一个 **Reference Record**（`[base: obj, name: "foo"]`），引擎从中取出 `base` 作为 `this`
+- **`call`/`apply`/`bind`** → 显式传入的值
+- **`new`** → 忽略传入的 `thisArgument`，创建新对象
+- **箭头函数** → 内部 `[[ThisMode]]` 为 `lexical`，直接跳过 `thisArgument`，引用词法环境中的 `this`
+
+**Reference Record 是理解隐式丢失的关键**：`const bar = obj.foo` 这个赋值操作不仅取了函数值，还丢弃了 Reference Record 中的 `base` 信息——函数被"提取"成了裸值，调用时无法再找回原本的 `this`。
+
+
+# apply、call、bind 区别及底层实现原理
+
+## 1. 语法区别
+
+```javascript
+func.call(thisArg, arg1, arg2, arg3, ...)   // 逐个传参
+func.apply(thisArg, [arg1, arg2, arg3])      // 数组传参
+func.bind(thisArg, arg1, arg2, ...)          // 返回新函数，不立即执行
+```
+
+| | call | apply | bind |
+|---|---|---|---|
+| 入参方式 | 逗号分隔，逐个传 | 数组/类数组统一传 | 逗号分隔，逐个传 |
+| 是否立即调用 | ✅ 立即调用 | ✅ 立即调用 | ❌ 返回新函数，需手动调用 |
+| 返回值 | 函数执行结果 | 函数执行结果 | 绑定了 this 的新函数 |
+| 二次绑定 | — | — | 无效，bind 锁死不可再变 |
+
+**记忆口诀**：call 用逗号，apply 用数组（A for Array），bind 返回新函数（B for bind 是"打包"）。
+
+## 2. 底层实现原理
+
+### call 实现
+
+```javascript
+Function.prototype.myCall = function(context, ...args) {
+  // 1. 处理 null/undefined → 指向全局
+  context = context ?? window
+  // 2. 将调用函数临时挂载到 context 上（作为方法）
+  const symbolKey = Symbol()
+  context[symbolKey] = this         // this 就是调用 myCall 的那个函数
+  // 3. 以 context.xxx() 的形式调用 → 触发隐式绑定 → this 指向 context
+  const result = context[symbolKey](...args)
+  // 4. 清理临时属性
+  delete context[symbolKey]
+  return result
+}
+```
+
+核心思想：**将函数挂到 context 对象上成为方法，以 `对象.方法()` 的方式调用，利用隐式绑定规则让 `this` 指向 context**。`Symbol` 确保不污染 context 的原有属性。
+
+### apply 实现
+
+原理与 call 完全相同，唯一区别是参数以数组形式接收：
+
+```javascript
+Function.prototype.myApply = function(context, args = []) {
+  context = context ?? window
+  const symbolKey = Symbol()
+  context[symbolKey] = this
+  const result = context[symbolKey](...args)
+  delete context[symbolKey]
+  return result
+}
+```
+
+### bind 实现
+
+```javascript
+Function.prototype.myBind = function(context, ...bindArgs) {
+  const originalFn = this  // 原函数
+  return function boundFn(...callArgs) {
+    // new 调用时，this 是 boundFn 的实例，应优先使用
+    // 普通调用时，使用绑定的 context
+    return originalFn.apply(
+      this instanceof boundFn ? this : context,
+      [...bindArgs, ...callArgs]
+    )
+  }
+}
+```
+
+**关键点：**
+1. `bind` 返回一个闭包函数 `boundFn`
+2. `boundFn` 内部用 `apply` 实现 this 绑定
+3. 合并 `bind` 时的参数和调用时的参数（柯里化特性）
+4. **`new` 优先级问题**：当 `new boundFn()` 时，`this instanceof boundFn` 为 `true`，使用新创建的对象而不是绑定的 context，确保 `new` 优先级高于 `bind`
+5. **不可二次绑定**：返回的 `boundFn` 不会再被 `bind` 影响（因为它只是一个普通函数，里面用 `apply` 固定了逻辑）
+
+### 为什么 bind 不可二次更改
+
+```javascript
+function fn() { console.log(this.name) }
+const bound1 = fn.bind({ name: 'A' })
+const bound2 = bound1.bind({ name: 'B' })
+bound2()  // 'A'，不是 'B'
+```
+
+原因在于 `bind` 返回的是一个新的 `boundFn`，而非原来的 `fn`。对 `bound1` 它的内部实现已经固定了对原函数的 `apply(context)`，第二次 `bind` 改变的是 `boundFn` 这个包装函数的上下文，而 `boundFn` 内部调用的始终是第一次绑定时的 `context`。
+
+### 箭头函数为何失效
+
+箭头函数没有自己的 `this`，它内部的 `this` 是从定义时词法环境捕获的常量。`call`/`apply`/`bind` 试图改变的是函数调用时的 `thisArgument` 隐式参数，但箭头函数的 `[[ThisMode]]` 是 `lexical`，引擎直接忽略这个参数——传了也白传。
+
+
+# 箭头函数特性
+
+## 1. 核心特性
+
+箭头函数除了语法更短，在语义上有 5 个核心差异：
+
+### 1.1 没有自己的 this（最重要的区别）
+
+箭头函数的 `this` 是从**定义时**外层词法作用域捕获的，是一个常量，永远不会变。详见 `js中的this > 箭头函数的 this`。
+
+```javascript
+const obj = {
+  name: 'obj',
+  greet: function() { setTimeout(function() { console.log(this.name) }, 100) },
+  greetArrow: function() { setTimeout(() => console.log(this.name), 100) }
+}
+obj.greet()       // undefined（普通函数 this → window）
+obj.greetArrow()  // 'obj'（箭头函数 this 继承自 greetArrow 的 this）
+```
+
+### 1.2 没有 arguments 对象
+
+箭头函数内部没有 `arguments`，需用 rest 参数替代：
+
+```javascript
+const fn = () => {
+  console.log(arguments)  // 引用外层函数的 arguments（如果有的话）
+}
+
+function outer() {
+  const inner = () => console.log(arguments)
+  inner()
+}
+outer(1, 2, 3)  // Arguments(3) [1, 2, 3] — 拿到的是 outer 的 arguments
+
+// 正确做法：用 rest 参数
+const sum = (...args) => args.reduce((a, b) => a + b, 0)
+sum(1, 2, 3)  // 6
+```
+
+### 1.3 不能用作构造函数
+
+箭头函数没有 `[[Construct]]` 内部方法，`new` 会直接抛出 TypeError：
+
+```javascript
+const Foo = () => {}
+new Foo()  // TypeError: Foo is not a constructor
+```
+
+这也意味着箭头函数没有 `prototype` 属性：
+
+```javascript
+const fn = () => {}
+console.log(fn.prototype)  // undefined
+```
+
+### 1.4 不能用作 Generator
+
+箭头函数内部不能使用 `yield`：
+
+```javascript
+const gen = () => { yield 1 }  // SyntaxError
+```
+
+### 1.5 不能用作类方法（没有 super）
+
+箭头函数没有 `[[HomeObject]]`，无法使用 `super`：
+
+```javascript
+class Parent {
+  greet() { return 'hello' }
+}
+class Child extends Parent {
+  greet = () => super.greet()  // SyntaxError
+}
+
+// 正确：普通方法或简写方法
+class Child2 extends Parent {
+  greet() { return super.greet() }  // ✅
+}
+```
+
+## 2. 与普通函数的完整对比
+
+| 特性 | 普通函数 | 箭头函数 |
+|------|---------|---------|
+| **`this`** | 调用时动态决定 | 定义时词法捕获，不可变 |
+| **`call/apply/bind`** | 可以改变 `this` | 无效，`this` 恒定 |
+| **`arguments`** | 有 | 无，需用 `...args` |
+| **`new` 调用** | ✅ 可作为构造函数 | ❌ TypeError |
+| **`prototype`** | 有（普通函数） | ❌ undefined |
+| **`super`** | 类方法中可用 | ❌ 不可用 |
+| **`yield`** | 可用（Generator） | ❌ 不可用 |
+| **语法** | `function() { return x }` | `() => x`（隐式返回表达式） |
+| **简写** | — | 单参数可省 `()`；单表达式可省 `{}` 和 `return` |
+
+## 3. 适用场景
+
+| 场景 | 推荐 | 原因 |
+|------|------|------|
+| 回调函数（定时器、事件） | ✅ 箭头函数 | 自动继承外层 `this`，省去 `bind` |
+| 对象方法 | ❌ 普通函数 | 箭头函数的 `this` 不会指向该对象 |
+| 构造函数 / 类 | ❌ 普通函数 | 箭头函数不能 `new` |
+| 数组方法（map/filter） | ✅ 均可 | 不涉及 `this` 时箭头函数更简洁 |
+| 动态 `this` 场景 | ❌ 普通函数 | 需要运行时决定 `this` 指向 |
+| 需要 `arguments` | ❌ 普通函数 | 箭头函数没有 `arguments` |
+| React 类组件方法 | ✅ 箭头函数 | 自动绑定实例，回调引用不丢失 `this` |
+| Vue methods | ✅ 普通函数 | Vue 会自动绑定 `this`，箭头函数反而拿不到 Vue 实例 |
+
+**一句话记忆**：需要自己的 `this` 用普通函数，不需要自己的 `this` 用箭头函数。
+
+
 # JavaScript为什么是单线程语言
 
 ## 1. JavaScript的诞生背景
@@ -37,6 +896,7 @@ JavaScript 通过**事件循环**（Event Loop）机制实现非阻塞异步编�
 - **无法直接更新 UI**：由于 Worker 线程没有 DOM 访问权限，需要将计算结果通过消息传递给主线程，由主线程更新页面。
 
 Web Worker 提供了真正的多线程能力，但受限于 DOM 访问，主要用于计算密集型任务，与主线程的单线程模型形成互补。
+
 
 
 # JavaScript事件循环
@@ -354,6 +1214,7 @@ setTimeout(() => console.log('宏3'), 0)
 // ⑤ 取下一个宏任务（宏2回调）→ 输出 '宏2'
 // 输出：宏1 → 微 → 宏3 → 宏2
 ```
+
 # JavaScript事件
 
 ## 1. 事件模型（DOM 事件标准）
@@ -538,6 +1399,7 @@ ul.addEventListener('click', function(e) {
 ```
 
 本质都是在一个函数体内串行调用，事件机制本身不限制回调数量。
+
 # Fetch 与 Ajax (XHR)
 
 ## 1. 一句话定义
@@ -704,594 +1566,6 @@ while (true) {
 > 实际项目中我一般用 axios 做封装，但理解底层差异对排查问题很重要。"
 
 
-# 词法环境和闭包
-
-## 1. 闭包的定义
-
-闭包是指函数可以记住其外部变量并可以访问这些变量。
-
-```javascript
-function outer() {
-  let count = 0
-  return function inner() {
-    count++
-    return count
-  }
-}
-const counter = outer()
-console.log(counter()) // 1
-console.log(counter()) // 2
-// outer 执行完了，但 inner 仍然持有 count 的引用
-```
-
-## 2. 为什么闭包能访问外部变量
-
-1. **函数在诞生时会记住创建它的词法环境**：每个函数在定义时都会持有对当前词法环境的引用，这个引用被存储在函数的内部属性 `[[Environment]]` 中。词法环境包含当前作用域的所有变量绑定。
-
-2. **闭包函数在函数中被创建**：当 `inner` 在 `outer` 内部被定义时，它的 `[[Environment]]` 被设置为 `outer` 函数的词法环境。所以无论 `inner` 在哪里被调用，它都能通过 `[[Environment]]` 找到 `outer` 作用域中的变量 `count`，即使 `outer` 已经执行完毕。
-
-一句话：闭包函数能够记住并访问外层函数的词法环境，是因为函数在创建时就把当时的词法环境"拍了个快照"存了下来。
-
-## 3. 闭包的应用场景
-
-### 防抖（Debounce）
-
-```javascript
-function debounce(fn, delay) {
-  let timer = null
-  return function (...args) {
-    clearTimeout(timer)
-    timer = setTimeout(() => fn.apply(this, args), delay)
-  }
-}
-```
-
-### 节流（Throttle）
-
-```javascript
-function throttle(fn, interval) {
-  let last = 0
-  return function (...args) {
-    const now = Date.now()
-    if (now - last >= interval) {
-      last = now
-      fn.apply(this, args)
-    }
-  }
-}
-```
-
-### 私有变量
-
-```javascript
-function createCounter() {
-  let count = 0
-  return {
-    increment: () => ++count,
-    decrement: () => --count,
-    get: () => count
-  }
-}
-```
-
-### 函数柯里化
-
-```javascript
-function curry(fn) {
-  return function curried(...args) {
-    if (args.length >= fn.length) return fn(...args)
-    return (...next) => curried(...args, ...next)
-  }
-}
-```
-
-## 4. 闭包与内存泄漏
-
-### 如何泄漏
-
-闭包本身不泄漏，泄漏的是**被闭包持有且永远不会被释放的引用**。常见场景：
-
-```javascript
-// 泄漏场景：全局变量持有闭包，闭包持有大对象
-let leak = null
-function setup() {
-  const bigData = new Array(1000000)
-  leak = function() {
-    console.log(bigData.length)
-  }
-}
-```
-
-### 如何定位
-
-**Chrome DevTools Memory 面板：**
-1. 录制堆快照（Heap Snapshot），搜索 `(closure)` 查看闭包详情
-2. 对比两个快照（操作前后），看哪些对象未被回收
-3. Performance 面板录制，勾选 Memory，观察内存曲线是否持续上升不回落
-
-**关键排查对象：**
-- 全局变量引用的闭包
-- 未移除的事件监听器（`Elements` → `Event Listeners`）
-- 未清理的定时器
-- 闭包中引用的已移除 DOM 元素
-
-### 如何防范与解决
-
-| 做法 | 说明 |
-|------|------|
-| 避免将闭包赋值给**全局变量** | 全局引用不会被 GC 回收 |
-| 及时清理事件监听 | `removeEventListener` 移除不再需要的监听 |
-| 及时清理定时器 | `clearInterval` / `clearTimeout` |
-| 不再需要时**置 null** | 切断闭包中的引用链 |
-| 用 `WeakMap/WeakSet` 作缓存 | 键为弱引用，不影响 GC |
-| 组件卸载时清理副作用 | React `useEffect` 返回清理函数 |
-
-# js中的this
-
-## 1. this 的本质
-
-`this` 不是一个词法变量——它不是定义时决定的，而是**每次函数调用时动态创建**的一个隐式参数。同一个函数，不同调用方式 → 不同的 `this`。
-
-可以把 `this` 理解为函数执行上下文中的一个属性，由调用位置和调用方式决定。
-
-## 2. 四条绑定规则
-
-### 2.1 默认绑定
-
-裸函数调用（前面没有对象点号）时，`this` 指向全局对象。严格模式下指向 `undefined`。
-
-```javascript
-function foo() { console.log(this) }
-foo()  // window（严格模式下 undefined）
-
-const obj = { bar: function() { console.log(this) } }
-const bar = obj.bar
-bar()  // window —— 函数引用被剥离，变为裸调用
-```
-
-**隐式丢失**是最常见的坑：一旦函数从对象上取出、赋值给变量或作为回调传入，就失去了隐式绑定，退回默认绑定。
-
-### 2.2 隐式绑定
-
-以 `对象.方法()` 的形式调用时，`this` 指向调用链上的**最后一个对象**。
-
-```javascript
-const obj = {
-  name: 'obj',
-  child: {
-    name: 'child',
-    foo: function() { console.log(this.name) }
-  }
-}
-obj.child.foo()  // 'child' ← 最后一个点号前面的对象
-```
-
-### 2.3 显式绑定（call / apply / bind）
-
-通过 `call`、`apply`、`bind` 显式指定 `this`，详见下一节。
-
-### 2.4 new 绑定
-
-使用 `new` 调用构造函数时，引擎创建一个新对象作为 `this`。`new` 做了四件事：
-
-1. 创建一个空对象 `{}`
-2. 将该对象的 `[[Prototype]]` 指向构造函数的 `prototype`
-3. 将该对象作为 `this` 传入构造函数执行
-4. 如果构造函数没有返回对象，则返回这个新对象
-
-```javascript
-function Person(name) {
-  this.name = name
-}
-const p = new Person('Tom')  // this → 新创建的对象
-```
-
-**`new` 绑定 > `bind` 绑定**：即使构造函数先被 `bind` 锁死了 `this`，`new` 调用时依然会创建一个新对象覆盖 `bind` 锁定的值。
-
-## 3. 箭头函数的 this
-
-箭头函数**没有自己的 `this` 槽位**，它从外层词法作用域捕获 `this`，在定义时就确定，永久不变。
-
-```javascript
-const obj = {
-  name: 'obj',
-  fn: () => console.log(this.name),          // this → window（定义时的外层）
-  fn2: function() {
-    return () => console.log(this.name)       // this → obj（外层 fn2 的 this）
-  }
-}
-obj.fn()     // undefined（window.name）
-obj.fn2()()  // 'obj'
-```
-
-一句话：**向上找最近一层非箭头函数的 `this`**，找不到就是全局。
-
-`call`/`apply`/`bind` 对箭头函数无效——它们改变的是函数调用时的 `this`，但箭头函数根本没有这个槽位。
-
-## 4. 优先级总结
-
-```
-new 绑定  >  显式绑定（call / apply / bind）  >  隐式绑定  >  默认绑定
-```
-
-**例外**：箭头函数无视以上所有规则，`this` 固定为定义时的词法 `this`。
-
-## 5. 典型场景
-
-| 场景 | this 指向 |
-|------|----------|
-| `obj.foo()` | `obj`（隐式绑定） |
-| `foo()` | `window` / `undefined`（默认绑定） |
-| `foo.call(obj)` | `obj`（显式绑定） |
-| `new Foo()` | 新创建的对象（new 绑定） |
-| `() => this` | 定义时外层作用域的 `this`（永远的） |
-| `btn.addEventListener('click', fn)` | `btn` 元素（DOM 规范定义，非 JS 规则） |
-| `setTimeout(fn, 0)` | `window` / `undefined`（相当于裸调用） |
-| 类字段 `fn = () => ...` | 绑定为当前实例（等价于构造函数中 `this.fn = () => ...`） |
-
-## 6. 底层原理
-
-在 ECMAScript 规范中，函数调用通过内部方法 `[[Call]](thisArgument, argumentsList)` 执行，`thisArgument` 就是一条额外的隐式实参。不同调用方式决定了 `thisArgument` 的值：
-
-- **裸调用** → `undefined`（严格模式）或全局对象
-- **方法调用** `obj.foo()` → 表达式 `obj.foo` 返回的是一个 **Reference Record**（`[base: obj, name: "foo"]`），引擎从中取出 `base` 作为 `this`
-- **`call`/`apply`/`bind`** → 显式传入的值
-- **`new`** → 忽略传入的 `thisArgument`，创建新对象
-- **箭头函数** → 内部 `[[ThisMode]]` 为 `lexical`，直接跳过 `thisArgument`，引用词法环境中的 `this`
-
-**Reference Record 是理解隐式丢失的关键**：`const bar = obj.foo` 这个赋值操作不仅取了函数值，还丢弃了 Reference Record 中的 `base` 信息——函数被"提取"成了裸值，调用时无法再找回原本的 `this`。
-
-# apply、call、bind 区别及底层实现原理
-
-## 1. 语法区别
-
-```javascript
-func.call(thisArg, arg1, arg2, arg3, ...)   // 逐个传参
-func.apply(thisArg, [arg1, arg2, arg3])      // 数组传参
-func.bind(thisArg, arg1, arg2, ...)          // 返回新函数，不立即执行
-```
-
-| | call | apply | bind |
-|---|---|---|---|
-| 入参方式 | 逗号分隔，逐个传 | 数组/类数组统一传 | 逗号分隔，逐个传 |
-| 是否立即调用 | ✅ 立即调用 | ✅ 立即调用 | ❌ 返回新函数，需手动调用 |
-| 返回值 | 函数执行结果 | 函数执行结果 | 绑定了 this 的新函数 |
-| 二次绑定 | — | — | 无效，bind 锁死不可再变 |
-
-**记忆口诀**：call 用逗号，apply 用数组（A for Array），bind 返回新函数（B for bind 是"打包"）。
-
-## 2. 底层实现原理
-
-### call 实现
-
-```javascript
-Function.prototype.myCall = function(context, ...args) {
-  // 1. 处理 null/undefined → 指向全局
-  context = context ?? window
-  // 2. 将调用函数临时挂载到 context 上（作为方法）
-  const symbolKey = Symbol()
-  context[symbolKey] = this         // this 就是调用 myCall 的那个函数
-  // 3. 以 context.xxx() 的形式调用 → 触发隐式绑定 → this 指向 context
-  const result = context[symbolKey](...args)
-  // 4. 清理临时属性
-  delete context[symbolKey]
-  return result
-}
-```
-
-核心思想：**将函数挂到 context 对象上成为方法，以 `对象.方法()` 的方式调用，利用隐式绑定规则让 `this` 指向 context**。`Symbol` 确保不污染 context 的原有属性。
-
-### apply 实现
-
-原理与 call 完全相同，唯一区别是参数以数组形式接收：
-
-```javascript
-Function.prototype.myApply = function(context, args = []) {
-  context = context ?? window
-  const symbolKey = Symbol()
-  context[symbolKey] = this
-  const result = context[symbolKey](...args)
-  delete context[symbolKey]
-  return result
-}
-```
-
-### bind 实现
-
-```javascript
-Function.prototype.myBind = function(context, ...bindArgs) {
-  const originalFn = this  // 原函数
-  return function boundFn(...callArgs) {
-    // new 调用时，this 是 boundFn 的实例，应优先使用
-    // 普通调用时，使用绑定的 context
-    return originalFn.apply(
-      this instanceof boundFn ? this : context,
-      [...bindArgs, ...callArgs]
-    )
-  }
-}
-```
-
-**关键点：**
-1. `bind` 返回一个闭包函数 `boundFn`
-2. `boundFn` 内部用 `apply` 实现 this 绑定
-3. 合并 `bind` 时的参数和调用时的参数（柯里化特性）
-4. **`new` 优先级问题**：当 `new boundFn()` 时，`this instanceof boundFn` 为 `true`，使用新创建的对象而不是绑定的 context，确保 `new` 优先级高于 `bind`
-5. **不可二次绑定**：返回的 `boundFn` 不会再被 `bind` 影响（因为它只是一个普通函数，里面用 `apply` 固定了逻辑）
-
-### 为什么 bind 不可二次更改
-
-```javascript
-function fn() { console.log(this.name) }
-const bound1 = fn.bind({ name: 'A' })
-const bound2 = bound1.bind({ name: 'B' })
-bound2()  // 'A'，不是 'B'
-```
-
-原因在于 `bind` 返回的是一个新的 `boundFn`，而非原来的 `fn`。对 `bound1` 它的内部实现已经固定了对原函数的 `apply(context)`，第二次 `bind` 改变的是 `boundFn` 这个包装函数的上下文，而 `boundFn` 内部调用的始终是第一次绑定时的 `context`。
-
-### 箭头函数为何失效
-
-箭头函数没有自己的 `this`，它内部的 `this` 是从定义时词法环境捕获的常量。`call`/`apply`/`bind` 试图改变的是函数调用时的 `thisArgument` 隐式参数，但箭头函数的 `[[ThisMode]]` 是 `lexical`，引擎直接忽略这个参数——传了也白传。
-
-# 箭头函数特性
-
-## 1. 核心特性
-
-箭头函数除了语法更短，在语义上有 5 个核心差异：
-
-### 1.1 没有自己的 this（最重要的区别）
-
-箭头函数的 `this` 是从**定义时**外层词法作用域捕获的，是一个常量，永远不会变。详见 `js中的this > 箭头函数的 this`。
-
-```javascript
-const obj = {
-  name: 'obj',
-  greet: function() { setTimeout(function() { console.log(this.name) }, 100) },
-  greetArrow: function() { setTimeout(() => console.log(this.name), 100) }
-}
-obj.greet()       // undefined（普通函数 this → window）
-obj.greetArrow()  // 'obj'（箭头函数 this 继承自 greetArrow 的 this）
-```
-
-### 1.2 没有 arguments 对象
-
-箭头函数内部没有 `arguments`，需用 rest 参数替代：
-
-```javascript
-const fn = () => {
-  console.log(arguments)  // 引用外层函数的 arguments（如果有的话）
-}
-
-function outer() {
-  const inner = () => console.log(arguments)
-  inner()
-}
-outer(1, 2, 3)  // Arguments(3) [1, 2, 3] — 拿到的是 outer 的 arguments
-
-// 正确做法：用 rest 参数
-const sum = (...args) => args.reduce((a, b) => a + b, 0)
-sum(1, 2, 3)  // 6
-```
-
-### 1.3 不能用作构造函数
-
-箭头函数没有 `[[Construct]]` 内部方法，`new` 会直接抛出 TypeError：
-
-```javascript
-const Foo = () => {}
-new Foo()  // TypeError: Foo is not a constructor
-```
-
-这也意味着箭头函数没有 `prototype` 属性：
-
-```javascript
-const fn = () => {}
-console.log(fn.prototype)  // undefined
-```
-
-### 1.4 不能用作 Generator
-
-箭头函数内部不能使用 `yield`：
-
-```javascript
-const gen = () => { yield 1 }  // SyntaxError
-```
-
-### 1.5 不能用作类方法（没有 super）
-
-箭头函数没有 `[[HomeObject]]`，无法使用 `super`：
-
-```javascript
-class Parent {
-  greet() { return 'hello' }
-}
-class Child extends Parent {
-  greet = () => super.greet()  // SyntaxError
-}
-
-// 正确：普通方法或简写方法
-class Child2 extends Parent {
-  greet() { return super.greet() }  // ✅
-}
-```
-
-## 2. 与普通函数的完整对比
-
-| 特性 | 普通函数 | 箭头函数 |
-|------|---------|---------|
-| **`this`** | 调用时动态决定 | 定义时词法捕获，不可变 |
-| **`call/apply/bind`** | 可以改变 `this` | 无效，`this` 恒定 |
-| **`arguments`** | 有 | 无，需用 `...args` |
-| **`new` 调用** | ✅ 可作为构造函数 | ❌ TypeError |
-| **`prototype`** | 有（普通函数） | ❌ undefined |
-| **`super`** | 类方法中可用 | ❌ 不可用 |
-| **`yield`** | 可用（Generator） | ❌ 不可用 |
-| **语法** | `function() { return x }` | `() => x`（隐式返回表达式） |
-| **简写** | — | 单参数可省 `()`；单表达式可省 `{}` 和 `return` |
-
-## 3. 适用场景
-
-| 场景 | 推荐 | 原因 |
-|------|------|------|
-| 回调函数（定时器、事件） | ✅ 箭头函数 | 自动继承外层 `this`，省去 `bind` |
-| 对象方法 | ❌ 普通函数 | 箭头函数的 `this` 不会指向该对象 |
-| 构造函数 / 类 | ❌ 普通函数 | 箭头函数不能 `new` |
-| 数组方法（map/filter） | ✅ 均可 | 不涉及 `this` 时箭头函数更简洁 |
-| 动态 `this` 场景 | ❌ 普通函数 | 需要运行时决定 `this` 指向 |
-| 需要 `arguments` | ❌ 普通函数 | 箭头函数没有 `arguments` |
-| React 类组件方法 | ✅ 箭头函数 | 自动绑定实例，回调引用不丢失 `this` |
-| Vue methods | ✅ 普通函数 | Vue 会自动绑定 `this`，箭头函数反而拿不到 Vue 实例 |
-
-**一句话记忆**：需要自己的 `this` 用普通函数，不需要自己的 `this` 用箭头函数。
-
-# 原型与原型链
-
-## 1. 原型（Prototype）
-每个对象都有一个**内部(**指针) `[[Prototype]]`（可通过 `__proto__` 或 `Object.getPrototypeOf()` 访问），它是一个**引用**，指向另一个对象。对于通过构造函数创建的实例，这个引用指向构造函数的 `prototype` 属性所引用的对象。
-
-构造函数的 `prototype` 属性本身是一个对象，包含可被所有实例共享的属性和方法。
-
-## 2. 原型链（Prototype Chain）
-当访问对象属性时，如果对象自身没有，就沿着内部引用 `[[Prototype]]` 向上查找，直到找到属性或到达原型链末端（通常是 `Object.prototype`，其 `[[Prototype]]` 为 `null`）。这个查找路径就是原型链。
-
-## 3. 特点
-
-JavaScript 对象是通过引用来传递的，我们创建的每个新对象实体中并没有一份属于自己的原型副本。当我们修改原型时，与之相关的对象也会继承这一改变。
-
-# new 操作符内部工作步骤
-
-## 1. 创建空对象
-
-创建一个新的空对象（`{}`）。
-
-## 2. 设置原型
-将新对象的内部 `[[Prototype]]` 引用指向构造函数的 `prototype` 对象。
-
-## 3. 执行构造函数
-以新对象作为 `this` 上下文执行构造函数，为新对象添加属性和方法。
-
-## 4. 返回对象
-
-如果构造函数显式返回一个对象，则使用该对象作为新实例；否则返回步骤1创建的新对象。
-
-```javascript
-// 实现一个 myNew 函数，模仿 JavaScript 中的 new 操作符的行为。
-// this 在js中 是动态绑定的，但是new操作符创建出来的对象会强制this指向本身，于是我们需要手动改变this执行
-// 所以我们 只能在 bind apply call 这三个方法中选择一个来改变this指向
-// 1. bind方法会返回一个新的函数，而不是直接调用函数，所以不适合我们在这里使用
-// 2. apply方法会接受一个参数数组，并作为参数传递给调用函数
-function myNew(constructorFn, ...args) {
-  // 创建一个新对象，并将其原型指向构造函数的 prototype 属性
-  const newObj = {};
-  // Object.setPrototypeOf() 方法设置一个指定的原型对象和属性到一个指定的对象上，返回修改后的对象。
-  Object.setPrototypeOf(newObj, constructorFn);
-  // 使用 apply 方法调用构造函数，并将新对象作为 this 传入，同时传递剩余的参数
-  const res = constructorFn.apply(newObj, args);
-  // 如果构造函数返回一个对象，则使用该对象作为结果；否则，使用新创建的对象作为结果
-  return res instanceof Object ? res : newObj;
-}
-```
-
-# js判断数据类型的四种方式
-
-## 1. typeof
-
-`typeof` 操作符返回一个表示数据类型的字符串。其底层实现是通过判断变量在内存中的**类型标签（Type Tag）**来区分基本类型。JavaScript 引擎内部使用低位二进制位存储类型信息：
-
-- `000`：对象（Object）
-- `1`：整数（Int）
-- `010`：浮点数（Double）
-- `100`：字符串（String）
-- `110`：布尔值（Boolean）
-- `-2^30`：undefined（即全 0，但特殊标记）
-
-```javascript
-typeof 42          // "number"
-typeof 'hello'     // "string"
-typeof true        // "boolean"
-typeof undefined   // "undefined"
-typeof Symbol()    // "symbol"
-typeof 10n         // "bigint"
-typeof function(){}  // "function"
-```
-
-**特殊情况与局限：**
-
-- **无法精准判断引用类型**：`typeof` 对数组、对象、正则、Date 等引用类型统一返回 `"object"`，无法进一步区分。
-- **`typeof null` 返回 `"object"`**：这是一个历史遗留 Bug。在 JS 底层存储中，`null` 的机器码全为 0，而对象类型标签也是 `000`，导致 `typeof null` 错误地返回 `"object"`。
-
-```javascript
-typeof null           // "object"  ← 历史遗留Bug
-typeof []             // "object"
-typeof {}             // "object"
-typeof /regex/        // "object"
-typeof new Date()     // "object"
-```
-
-## 2. instanceof
-
-`instanceof` 操作符通过**原型链查找**来判断数据类型，检测左边对象的原型链上是否存在右边构造函数的 `prototype`。主要用于判断引用类型数据。
-
-```javascript
-[] instanceof Array           // true
-{} instanceof Object          // true
-new Date() instanceof Date    // true
-function(){} instanceof Function  // true
-
-// 原型链上的构造函数都会返回 true
-[] instanceof Object          // true（Array 的原型链上有 Object.prototype）
-```
-
-**局限：**
-
-- 不能判断基本类型（如 `123 instanceof Number` 返回 `false`）。
-- 跨 iframe / 跨窗口环境下，不同执行上下文有独立的构造函数，`instanceof` 会失效。
-
-## 3. Array.isArray
-
-`Array.isArray()` 是 `Array` 构造函数的**静态方法**，专门用于判断一个值是否为数组，返回布尔值。弥补了 `typeof` 和 `instanceof` 在判断数组时的不足。
-
-```javascript
-Array.isArray([])                // true
-Array.isArray(new Array())       // true
-Array.isArray({})                // false
-Array.isArray('hello')           // false
-Array.isArray(arguments)         // false（类数组但不是数组）
-
-// 跨 iframe 环境下依然可靠（不依赖原型链）
-```
-
-## 4. Object.prototype.toString.call
-
-这是判断数据类型**最准确**的方法。通过调用 `Object.prototype` 上的 `toString` 方法，返回 `[object Xxx]` 格式的字符串，其中 `Xxx` 为内部 `[[Class]]` 属性的值。
-
-```javascript
-Object.prototype.toString.call(42)           // "[object Number]"
-Object.prototype.toString.call('hello')      // "[object String]"
-Object.prototype.toString.call(true)         // "[object Boolean]"
-Object.prototype.toString.call(undefined)    // "[object Undefined]"
-Object.prototype.toString.call(null)         // "[object Null]"
-Object.prototype.toString.call([])           // "[object Array]"
-Object.prototype.toString.call({})           // "[object Object]"
-Object.prototype.toString.call(function(){}) // "[object Function]"
-Object.prototype.toString.call(new Date())   // "[object Date]"
-Object.prototype.toString.call(/regex/)      // "[object RegExp]"
-Object.prototype.toString.call(new Map())    // "[object Map]"
-Object.prototype.toString.call(new Set())    // "[object Set]"
-Object.prototype.toString.call(Symbol())     // "[object Symbol]"
-```
-
-**为什么必须用 `call`？** 因为数组、字符串等类型重写了自身的 `toString` 方法，直接调用会返回不同的结果（如数组的 `toString()` 返回以逗号拼接的元素字符串）。必须借用 `Object.prototype` 原生的 `toString` 才能拿到内部类型标记。
-
-## 总结
-
-| 方法 | 判断范围 | 优缺点 |
-|------|---------|--------|
-| `typeof` | 基本类型 + function | 快速简单，无法区分引用类型，`null` 误判 |
-| `instanceof` | 引用类型 | 基于原型链，无法判断基本类型，跨 iframe 失效 |
-| `Array.isArray` | 仅数组 | 数组判断专用，跨 iframe 可靠 |
-| `Object.prototype.toString.call` | 所有类型 | 最全面准确，写法稍长 |
 
 # 路由加载
 在现代 SPA 应用中，前端路由系统通过 **hash** 或 **history** 模式实现页面切换，两者核心区别在于是否会导致浏览器重新请求 HTML 文件。
@@ -1313,122 +1587,3 @@ Object.prototype.toString.call(Symbol())     // "[object Symbol]"
 - **首页核心组件和相关资源**：静态导入结合`preload`，确保首屏渲染速度。
 - **高频访问页面**：动态 `import()` 并配合 `prefetch` 预加载，在浏览器空闲时提前下载。
 - **低频访问页面**：仅动态 `import()`，按需加载。
-
-# 堆内存与栈内存
-
-## 1. 栈与堆概述
-
-### 1.1 栈内存
-
-栈是**连续内存**区域，采用**后进先出（LIFO）**结构，由系统自动分配和释放，速度快。用于存储基本类型值和引用类型的地址指针。
-
-- **大小固定**：编译时确定，每个变量所需空间已知
-- **自动管理**：函数调用时入栈分配，返回时自动弹栈释放
-- **访问快速**：连续内存布局，通过栈指针偏移直接读写
-
-### 1.2 堆内存
-
-堆是**非连续内存**区域，大小动态，需垃圾回收器（GC）自动回收，速度较慢。用于存储**引用类型的实际数据**。
-
-- **大小不固定**：对象的属性可动态增删，运行时分配
-- **生命周期不定**：可能被函数外部引用，不能随函数结束自动释放
-- **通过GC回收**：当没有引用指向对象时，GC 在合适时机回收
-
-### 1.3 完整对比
-
-| 维度 | 栈 | 堆 |
-|------|-----|-----|
-| 结构 | 连续内存，LIFO | 非连续内存 |
-| 分配方式 | 编译时确定，自动分配 | 运行时动态分配 |
-| 释放方式 | 函数返回自动弹栈 | 垃圾回收器（GC） |
-| 速度 | 快 | 慢 |
-| 空间大小 | 小（~1MB） | 大（GB 级） |
-| 存储内容 | 基本类型 + 引用地址 | 引用类型实际数据 |
-| 线程安全 | 每个线程独立栈 | 堆共享，需同步机制 |
-
-## 2. 引用类型为何存在堆上
-
-### 2.1 三个原因
-
-**大小不确定**：对象可动态增删属性，编译时无法确定大小，栈要求编译时知道每个变量占多少字节。
-
-```javascript
-const obj = {}
-obj.a = 1
-obj.b = { c: { d: [1, 2, 3] } }
-```
-
-**生命周期不确定**：对象可能被函数外部引用（闭包、全局变量），不能随函数结束销毁。栈的生命周期固定为函数调用期间。
-
-```javascript
-function createUser() {
-  const user = { name: 'Tom' }
-  return user
-}
-const u = createUser()  // 栈帧已销毁，堆上的 user 仍存活
-```
-
-**引用共享**：同一对象可能被多个变量引用，栈只存地址，多个栈帧中的地址指向同一堆内存。
-
-```javascript
-const a = { value: 1 }
-const b = a
-a.value = 2
-console.log(b.value)  // 2 — 共享堆中的同一份数据
-```
-
-### 2.2 变量赋值的本质
-
-```javascript
-let num = 42        // 栈：存值 42
-let obj = { a: 1 }  // 栈：存地址 → 堆：存 { a: 1 }
-
-let num2 = num      // 栈：复制值（独立副本）
-let obj2 = obj      // 栈：复制地址（指向堆中同一对象）
-
-num2 = 100          // 不影响 num
-obj2.a = 2          // obj.a 也变成 2
-```
-
-```
-             栈内存                        堆内存
-    ┌──────────────────┐          ┌──────────────────┐
-    │  num: 42          │          │                  │
-    │  obj: ─────────────┼─────────┼─→│ { a: 1 }     │ │
-    │  num2: 100        │          │  └─────────────┘ │
-    │  obj2: ────────────┼─────────┼─→      ↑         │
-    └──────────────────┘          │       共享        │
-                                  └──────────────────┘
-```
-
-### 2.3 闭包与堆内存
-
-闭包中的变量虽然声明在函数内，但被内部函数引用后，会被提升到**堆上存储**。因为栈帧释放后闭包还需要持有这些变量。
-
-```javascript
-function outer() {
-  let count = 0       // count 不在栈上，而在堆上（闭包将其"闭包化"）
-  return function inner() {
-    count++
-    return count
-  }
-}
-const fn = outer()    // outer 栈帧释放，但 count 仍在堆上存活
-```
-
-## 3. 栈溢出（Stack Overflow）
-
-函数调用嵌套过深导致栈空间耗尽时发生。浏览器约 1~2MB，Node.js 默认约 984KB。
-
-```javascript
-function infinite() { return infinite() }
-infinite()  // RangeError: Maximum call stack size exceeded
-```
-
-## 4. 面试总结
-
-> "栈是连续内存，LIFO 结构，编译时确定大小，自动分配释放，速度快，存基本类型和引用地址；
-> 堆是非连续内存，运行时动态分配，GC 回收，速度慢，存引用类型实际数据。
-> 引用类型必须放堆上，因为对象大小不确定、生命周期不固定、需要引用共享——栈无法满足。
-> 闭包中的变量看似在函数内，但其实也被提升到了堆上，确保函数执行完后变量仍存活。"
-
