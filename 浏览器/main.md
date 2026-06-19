@@ -369,3 +369,203 @@ navigator.serviceWorker.controller.postMessage('快递到啦！');
 - 优先级是根据浏览器的窗口位置，在展示窗口内的，或者靠近展示窗口的，会被优先合成；
 - 上面的步骤完成之后，渲染进程就会通过IPC向浏览器进程（browser process）提交（commit）一个合成帧compositor frame；
 - 合成帧都会被发送给GPU从而展示在屏幕上。如果浏览器监听到页面滚动事件，就会通知渲染进程构建另外一个合成帧来更新页面；
+
+# 跨域与同源策略
+
+## 同源策略
+
+浏览器安全基石。**同源**指协议、域名、端口三者一致。不同源的页面间，浏览器限制以下行为：
+
+- **DOM 访问**：阻止跨域页面读取 iframe 的内容
+- **数据读取**：阻止跨域请求的响应被 JS 读取（除非服务端允许）
+- **存储访问**：`localStorage`、`sessionStorage`、`Cookie` 均受同源限制
+
+## 跨域解决方案
+
+### 1. CORS（跨域资源共享）
+
+服务端通过 HTTP 响应头告知浏览器允许跨域，是最主流的方案。
+
+**响应头：**
+
+| 响应头 | 作用 |
+|--------|------|
+| `Access-Control-Allow-Origin` | 允许的源，可填 `*` 或具体域名 |
+| `Access-Control-Allow-Methods` | 允许的 HTTP 方法 |
+| `Access-Control-Allow-Headers` | 允许的请求头 |
+| `Access-Control-Allow-Credentials` | 是否允许携带凭据（cookie） |
+| `Access-Control-Max-Age` | 预检请求结果缓存时间（秒） |
+| `Access-Control-Expose-Headers` | 允许 JS 读取的响应头白名单 |
+
+**请求头：**
+
+| 请求头 | 作用 |
+|--------|------|
+| `Origin` | 标识请求来源的源 |
+| `Access-Control-Request-Method` | 预检请求中，告知实际请求的 HTTP 方法 |
+| `Access-Control-Request-Headers` | 预检请求中，告知实际请求的自定义头 |
+
+#### 简单请求 vs 复杂请求
+
+**简单请求**需同时满足以下条件：
+
+- 方法：`GET`、`HEAD`、`POST` 之一
+- 请求头：仅包含以下安全头（`Accept`、`Accept-Language`、`Content-Language`、`Content-Type` 限 `application/x-www-form-urlencoded`、`multipart/form-data`、`text/plain`）
+- 请求中没有 `ReadableStream` 对象
+
+**复杂请求（非简单请求）**：不满足上述任一条件的请求，如：
+- 使用 `PUT`、`DELETE`、`PATCH` 等方法
+- `Content-Type` 为 `application/json`
+- 携带自定义请求头（如 `Authorization`、`X-Requested-With`）
+
+复杂请求会在实际请求前**自动发送一次 OPTIONS 预检请求**，询问服务端是否允许该跨域请求。
+
+```
+// 预检请求（浏览器自动发出）
+OPTIONS /api/data HTTP/1.1
+Origin: https://example.com
+Access-Control-Request-Method: PUT
+Access-Control-Request-Headers: Authorization
+
+// 预检响应
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: https://example.com
+Access-Control-Allow-Methods: PUT
+Access-Control-Allow-Headers: Authorization
+Access-Control-Max-Age: 86400
+```
+
+**示例——服务端设置 CORS（Node.js）：**
+
+```javascript
+// 简单请求
+app.get('/api/data', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', 'https://example.com');
+  res.json({ message: 'ok' });
+});
+
+// 复杂请求——处理预检
+app.options('/api/data', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', 'https://example.com');
+  res.setHeader('Access-Control-Allow-Methods', 'PUT, DELETE');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  res.sendStatus(204);
+});
+
+app.put('/api/data', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', 'https://example.com');
+  res.json({ message: 'updated' });
+});
+```
+
+**携带凭据（cookie）：**
+
+```javascript
+// 前端
+fetch('https://api.example.com/data', {
+  credentials: 'include', // 携带 cookie
+});
+
+// 服务端
+res.setHeader('Access-Control-Allow-Origin', 'https://example.com');
+res.setHeader('Access-Control-Allow-Credentials', 'true');
+// 注意：Allow-Origin 不能为 *
+```
+
+### 2. JSONP
+
+利用 `<script>` 标签不受同源策略限制，通过动态创建 script 标签加载跨域数据。
+
+```html
+<!-- 前端 -->
+<script>
+function handleCallback(data) {
+  console.log(data);
+}
+</script>
+<script src="https://api.example.com/data?callback=handleCallback"></script>
+```
+
+```javascript
+// 服务端（Node.js）
+app.get('/data', (req, res) => {
+  const callback = req.query.callback;
+  const data = { message: 'hello' };
+  res.send(`${callback}(${JSON.stringify(data)})`);
+  // 实际返回：handleCallback({"message":"hello"})
+});
+```
+
+**缺点：** 只支持 GET，需要服务端配合，无法处理错误，存在安全风险（XSS）。
+
+### 3. 代理转发
+
+同源策略只限制浏览器，浏览器与服务器之间通过代理转发，让请求走同源路径。
+
+**开发环境（Vite）：**
+
+```javascript
+// vite.config.js
+export default {
+  server: {
+    proxy: {
+      '/api': {
+        target: 'https://api.example.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
+  },
+};
+```
+
+**生产环境（Nginx）：**
+
+```nginx
+server {
+    location /api/ {
+        proxy_pass https://api.example.com/;
+        proxy_set_header Host $host;
+    }
+}
+```
+
+### 4. postMessage
+
+`window.postMessage` 允许不同源的 iframe 或窗口之间安全通信。
+
+```javascript
+// 父页面（https://parent.com）
+const iframe = document.querySelector('iframe');
+iframe.contentWindow.postMessage({ type: 'hello', data: '来自父页面' }, 'https://child.com');
+
+// iframe 子页面（https://child.com）
+window.addEventListener('message', (event) => {
+  // 验证来源
+  if (event.origin !== 'https://parent.com') return;
+  console.log(event.data);
+  event.source.postMessage({ type: 'reply' }, event.origin);
+});
+```
+
+### 5. WebSocket
+
+WebSocket 协议本身不受同源策略限制，握手时通过 `Origin` 头验证。
+
+```javascript
+const ws = new WebSocket('wss://api.example.com/socket');
+
+ws.onopen = () => ws.send('连接建立');
+ws.onmessage = (event) => console.log(event.data);
+```
+
+### 6. document.domain
+
+适用于主域名相同的跨子域通信（如 `a.example.com` 和 `b.example.com`）。
+
+```javascript
+// 两个页面都设置
+document.domain = 'example.com';
+// 之后即可通过 iframe 的 contentDocument 访问对方 DOM
+```

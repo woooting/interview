@@ -1402,169 +1402,80 @@ ul.addEventListener('click', function(e) {
 
 # Fetch 与 Ajax (XHR)
 
-## 1. 一句话定义
+Ajax 是基于 `XMLHttpRequest` 的事件回调方案；Fetch 是 ES6 基于 Promise 的原生 API。核心区别如下：
 
-| | 定义 |
-|---|---|
-| **Ajax** | 基于 `XMLHttpRequest` 对象 + 事件回调，实现异步 HTTP 通信的**技术方案** |
-| **Fetch** | ES6 原生 API，基于 Promise，是 XHR 的**现代替代品** |
+1. **编程模型** — XHR 事件回调（`onload`/`onerror`），Fetch 的 Promise 链式调用，可用 `async/await` 扁平化。
 
-## 2. 核心对比表
+   ```javascript
+   // XHR
+   const xhr = new XMLHttpRequest()
+   xhr.open('GET', '/api/data')
+   xhr.onload = () => {
+     if (xhr.status === 200) JSON.parse(xhr.responseText)
+   }
+   xhr.send()
 
-| 对比维度 | Ajax (XHR) | Fetch |
-|---------|-----------|-------|
-| **编程模型** | 事件回调（`onload` / `onerror` / `onreadystatechange`） | Promise（`.then()` / `async await`） |
-| **错误处理** | 仅网络错误进 `onerror`；HTTP 错误（404/500）进 `onload`，需手动判断 `status` | 仅网络错误 reject；HTTP 错误正常 resolve，需检查 `response.ok` |
-| **请求取消** | `xhr.abort()` — 实例方法，一次取消一个 | `AbortController` + `signal` — 信号量模式，一个信号可取消多个请求 |
-| **超时设置** | 内置 `xhr.timeout` + `ontimeout` 事件 | 无内置，需 `AbortSignal.timeout()` 或手动 `setTimeout` + `abort()` |
-| **进度监听** | 支持 `progress` / `upload.onprogress` 事件 | 不原生支持，需借助 `ReadableStream` 间接实现 |
-| **流式读取** | 不支持 | 支持 `response.body`（`ReadableStream`），实时逐块处理 |
-| **Cookie 携带** | 同域默认携带 | 默认不携带，需 `credentials: 'include'` |
-| **Service Worker** | 不支持 | 支持（SW 中唯一可用的请求 API） |
-| **重定向控制** | 默认跟随 | 可通过 `redirect: 'manual'` / `'error'` 控制 |
-| **兼容性** | IE5+ 全兼容 | IE 不支持，Chrome 42+ / Firefox 39+ / Safari 10+ |
+   // Fetch
+   const res = await fetch('/api/data')
+   if (!res.ok) throw new Error(`HTTP ${res.status}`)
+   const data = await res.json()
+   ```
 
-## 3. 七大核心区别逐条拆解
+2. **错误处理** — 两者行为一致：HTTP 404/500 都不算异常。XHR 进 `onload`，Fetch 正常 resolve，都需手动检查 `status`/`response.ok`。只有断网等网络层错误才会触发 `onerror` 或 reject。
 
-### 3.1 编程模型：回调 vs Promise
+   ```javascript
+   // XHR：404 进 onload，需手动判断
+   xhr.onload = () => { if (xhr.status >= 400) { /* HTTP 错误 */ } }
+   xhr.onerror = () => { /* 网络层错误 */ }
 
-这是最根本的区别。XHR 基于事件监听，Fetch 基于 Promise 链式调用。
+   // Fetch：404 正常 resolve，需检查 ok
+   fetch('/api/data').then(res => {
+     if (!res.ok) throw new Error(`HTTP ${res.status}`)
+   }).catch(err => { /* 网络层错误 + 手动 throw */ })
+   ```
 
-```javascript
-// XHR — 回调嵌套
-const xhr = new XMLHttpRequest()
-xhr.open('GET', '/api/data')
-xhr.onload = () => {
-  if (xhr.status === 200) {
-    const data = JSON.parse(xhr.responseText)
-    // 下一个请求又要嵌套一层...
-  }
-}
-xhr.onerror = () => console.error('网络错误')
-xhr.send()
+3. **请求取消** — XHR 用 `xhr.abort()` 直接取消单个请求；Fetch 用 `AbortController` + `signal`，一个信号可同时取消多个请求。
 
-// Fetch — async/await 扁平化
-try {
-  const res = await fetch('/api/data')
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const data = await res.json()
-} catch (err) {
-  console.error(err)
-}
-```
+   ```javascript
+   const ctrl = new AbortController()
+   fetch('/a', { signal: ctrl.signal })
+   fetch('/b', { signal: ctrl.signal })
+   ctrl.abort()  // 同时取消 a 和 b
+   // 超时：AbortSignal.timeout(5000)
+   ```
 
-### 3.2 错误处理：行为一致，不要被误导
+4. **超时** — XHR 内置 `xhr.timeout` + `ontimeout` 事件；Fetch 无内置，需用 `AbortSignal.timeout()` 或手动 `setTimeout` + `abort()`。
 
-> **关键结论：两者行为一致——HTTP 错误（404/500）都不算"异常"。**
+5. **Cookie 携带** — XHR 同域默认携带；Fetch 默认不携带，需显式设置 `credentials: 'include'`（同域）/ `'same-origin'`（默认）/ `'omit'`。
 
-- XHR：HTTP 错误进 `onload` 而非 `onerror`，需手动检查 `xhr.status`
-- Fetch：HTTP 错误 Promise 正常 resolve，需检查 `response.ok`（`status` 在 200-299 之间为 `true`）
+6. **进度监听** — XHR 原生支持 `progress` 事件（下载）和 `upload.onprogress`（上传）；Fetch 不直接支持，需借助 `ReadableStream` 逐块计算。
 
-```javascript
-// XHR — 404 进 onload
-xhr.onload  = () => { if (xhr.status >= 400) { /* HTTP 错误 */ } }
-xhr.onerror = () => { /* 仅断网、DNS 失败等网络层错误 */ }
+   ```javascript
+   xhr.upload.onprogress = (e) => {
+     console.log(`${e.loaded}/${e.total}`)
+   }
+   ```
 
-// Fetch — 404 正常 resolve
-fetch('/api/not-found')
-  .then(res => { if (!res.ok) throw new Error('HTTP 错误') })  // ← 404 走到这里
-  .catch(err => { /* 仅断网等网络层错误 + 手动 throw */ })
-```
+7. **流式读取** — Fetch 独有，`response.body` 是 `ReadableStream`，可逐块处理响应（AI 对话流式输出、大文件下载）。XHR 只能等完整响应。
 
-### 3.3 请求取消
+   ```javascript
+   const res = await fetch('/api/stream')
+   const reader = res.body.getReader()
+   const decoder = new TextDecoder()
+   while (true) {
+     const { done, value } = await reader.read()
+     if (done) break
+     console.log('收到:', decoder.decode(value, { stream: true }))
+   }
+   ```
 
-```javascript
-// XHR — 简单直接
-xhr.abort()
+8. **Service Worker** — SW 中只能用 Fetch，不支持 XHR。
+9. **重定向控制** — Fetch 可通过 `redirect: 'manual'` / `'error'` 控制；XHR 默认跟随不可控。
+10. **兼容性** — XHR（IE5+）优于 Fetch（IE 不支持, Chrome 42+ / Firefox 39+ / Safari 10+）。
 
-// Fetch — AbortController 信号量模式，可批量取消
-const ctrl = new AbortController()
-fetch('/a', { signal: ctrl.signal })
-fetch('/b', { signal: ctrl.signal })
-ctrl.abort()  // 同时取消 a 和 b
+## 为什么 Ajax/Fetch 能实现无刷新更新
 
-// 超时模拟
-fetch('/api', { signal: AbortSignal.timeout(5000) })
-```
-
-### 3.4 超时
-
-- XHR：`xhr.timeout = 5000` + `xhr.ontimeout` 事件，内置支持
-- Fetch：无内置超时，推荐 `AbortSignal.timeout(5000)`，捕获 `AbortError`
-
-### 3.5 Cookie 携带
-
-- XHR：同域请求默认自动携带 Cookie
-- Fetch：**默认不携带**，跨域尤其容易踩坑。需显式设置：
-
-```javascript
-fetch('/api', { credentials: 'include' })  // 始终携带
-fetch('/api', { credentials: 'same-origin' })  // 同域携带（默认）
-fetch('/api', { credentials: 'omit' })  // 始终不携带
-```
-
-### 3.6 进度监听
-
-- XHR：`xhr.onprogress`（下载进度）、`xhr.upload.onprogress`（上传进度）
-- Fetch：不直接支持，需借助 `ReadableStream` 逐块计算
-
-```javascript
-// XHR 上传进度
-xhr.upload.onprogress = (e) => {
-  console.log(`已上传 ${e.loaded}/${e.total}`)
-}
-```
-
-### 3.7 流式读取（Fetch 独有）
-
-Fetch 的 `response.body` 是 `ReadableStream`，可逐块读取，XHR 只能等完整响应。
-
-```javascript
-const res = await fetch('/api/stream')
-const reader = res.body.getReader()
-const decoder = new TextDecoder()
-
-while (true) {
-  const { done, value } = await reader.read()
-  if (done) break
-  console.log('收到:', decoder.decode(value, { stream: true }))
-}
-// 场景：AI 对话流式输出、大文件分块下载
-```
-
-## 4. 为什么 Ajax/Fetch 能实现「无刷新更新」
-
-| | 传统请求（表单/链接） | Ajax / Fetch |
-|---|---|---|
-| 页面 | 卸载，整页替换 | 不卸载，页面保持 |
-| 响应 | 完整 HTML 文档 | 纯数据（JSON）或 HTML 片段 |
-| 更新方式 | 浏览器全量重渲染（闪烁） | JS 通过 DOM API 局部更新（无闪烁） |
-| 阻塞 | 页面卡死直到加载完成 | 网络线程异步处理，主线程不阻塞 |
-
-**核心原因**：请求控制权交给 JS，拿到数据后开发者自行决定更新哪些 DOM 节点，而非整页替换。
-
-## 5. 面试回答模板
-
-> "Ajax 是基于 XMLHttpRequest 对象，通过事件回调实现异步通信的方式；Fetch 是 ES6 引入的原生 API，基于 Promise。
->
-> 两者最大的区别是编程模型——一个是回调，一个是 Promise。具体差异有七个：
->
-> **错误处理上，两者行为一致**：HTTP 404/500 都不算异常，XHR 进 `onload`、Fetch 正常 resolve，都需要手动判断 `status` / `ok`。
->
-> **请求取消**，XHR 用 `xhr.abort()` 简单直接；Fetch 用 `AbortController` 信号量模式，一个信号可以同时取消多个请求。
->
-> **超时**，XHR 有内置 `timeout` 属性；Fetch 没有，需要 `AbortSignal.timeout()` 或手动实现。
->
-> **Cookie**，XHR 默认携带同源 cookie；Fetch 默认不携带，要设置 `credentials: 'include'`。
->
-> **进度**，XHR 支持 `progress` 事件；Fetch 需要借助 Streams API 实现。
->
-> **流式读取**，Fetch 支持 `ReadableStream`，可以逐块处理响应数据（AI 对话、大文件下载），这是 XHR 做不到的。
->
-> **Service Worker** 中只能用 Fetch，不支持 XHR。
->
-> 实际项目中我一般用 axios 做封装，但理解底层差异对排查问题很重要。"
-
+传统表单/链接请求会卸载整页重新加载；Ajax/Fetch 将请求控制权交给 JS，网络线程异步通信不阻塞主线程，拿到响应数据后通过 DOM API 局部更新页面，无需整页替换。同时浏览器不会卸载当前页面，页面状态得以保持。
 
 
 # 路由加载
@@ -1587,3 +1498,284 @@ while (true) {
 - **首页核心组件和相关资源**：静态导入结合`preload`，确保首屏渲染速度。
 - **高频访问页面**：动态 `import()` 并配合 `prefetch` 预加载，在浏览器空闲时提前下载。
 - **低频访问页面**：仅动态 `import()`，按需加载。
+
+
+# File、Blob、ArrayBuffer
+
+## 关系总览
+
+```
+File 继承 Blob，Blob 是 File 的父类。
+ArrayBuffer 是底层二进制缓冲区，可被 Blob 引用，也可通过 TypedArray/DataView 读写。
+
+                  Blob（不可变，带 MIME 类型）
+                 /      \
+           File（带文件名）  new Blob()（程序化生成）
+              │
+     ArrayBuffer（内存中的原始字节，可读写）
+              │
+     Uint8Array / DataView（操作 ArrayBuffer 的视图）
+```
+
+### 核心区别
+
+| 维度 | Blob / File | ArrayBuffer |
+|------|-------------|-------------|
+| 本质 | 浏览器管理的不可变二进制"文件" | JS 堆内存中的可变二进制缓冲区 |
+| 读写 | ❌ 只读（slice 也只能产出新 Blob） | ✅ 通过 TypedArray 直接改每个字节 |
+| 元信息 | 有 `size`、`type`（MIME）、File 还有 `name` | 只有 `byteLength` |
+| 内存位置 | 浏览器内核管理，不在 JS 堆 | V8 的 ArrayBuffer 分配区 |
+| 典型场景 | 文件上传、图片预览、下载、切片 | 图片像素操作、音频解码、加密、协议解析、WebGL |
+
+---
+
+## Blob
+
+### 是什么
+
+不可变的二进制数据容器，代表一个"文件片段"，有 `size` 和 `type`（MIME 类型）。
+
+### 常见来源
+
+```js
+new Blob(['hello'], { type: 'text/plain' })
+canvas.toBlob()
+fetch(url).then(r => r.blob())
+file.slice()         // ⚠️ 返回 Blob，不是 File
+```
+
+### 常见 API
+
+| API | 说明 | 返回值 |
+|-----|------|--------|
+| `blob.size` | 字节大小 | number |
+| `blob.type` | MIME 类型 | string |
+| `blob.slice(start?, end?, type?)` | 切片，返回新 Blob（零拷贝） | Blob |
+| `blob.text()` | 读为字符串 | Promise\<string\> |
+| `blob.arrayBuffer()` | 读为 ArrayBuffer | Promise\<ArrayBuffer\> |
+| `blob.stream()` | 读为 ReadableStream | ReadableStream |
+
+### 应用场景
+
+- **JS 生成文件下载**：`new Blob([data], { type })` → `URL.createObjectURL(blob)` → `<a download>`
+- **切片上传**：`file.slice(...)` 切出多块，放入 FormData 发送
+- **文件预览**：`URL.createObjectURL(blob)` 给 `<img>` / `<video>` / `<iframe>`
+
+---
+
+## File
+
+### 是什么
+
+Blob 的子类，增加了文件名和最后修改时间。
+
+```js
+File.prototype.__proto__ === Blob.prototype  // true
+```
+
+### 常见来源
+
+```js
+<input type="file"> .files[0]
+拖拽事件的 e.dataTransfer.files[0]
+new File([blob], 'name.txt', { type: 'text/plain', lastModified: Date.now() })
+```
+
+### 额外属性
+
+| 属性 | 说明 |
+|------|------|
+| `file.name` | 文件名（含扩展名） |
+| `file.lastModified` | 最后修改时间戳 |
+| `file.webkitRelativePath` | 目录上传时的相对路径 |
+
+### 应用场景
+
+- **用户上传文件**：`<input type="file">` 拿到的就是 File
+- **需要文件名时**：切片上传时用 `file.name` 传给服务端做标识
+- **File 和 Blob 互换**：File 可以直接当 Blob 用（所有 Blob API 都能调）
+
+---
+
+## ArrayBuffer
+
+### 是什么
+
+内存中一段固定长度的原始二进制缓冲区，**不能直接读写**，必须通过 TypedArray 或 DataView 操作。
+
+### 常见来源
+
+```js
+new ArrayBuffer(1024)                        // 创建 1KB 的缓冲区
+await blob.arrayBuffer()                     // Blob 转 ArrayBuffer
+await fetch(url).then(r => r.arrayBuffer())  // 网络请求读为二进制
+reader.readAsArrayBuffer(file)               // FileReader 方式
+crypto.subtle.digest('SHA-256', buffer)      // 加密 API 返回 ArrayBuffer
+```
+
+### 视图操作
+
+```js
+const buf = new ArrayBuffer(8)
+
+// 按不同视图读同一块内存
+const u8  = new Uint8Array(buf)    // 8 个字节
+const u16 = new Uint16Array(buf)   // 4 个 short
+const u32 = new Uint32Array(buf)   // 2 个 int
+const f64 = new Float64Array(buf)  // 1 个 double
+const dv  = new DataView(buf)      // 混合类型 + 控制字节序
+
+u8[0] = 0xFF  // 直接改字节
+```
+
+### 常见 API（TypedArray）
+
+| API | 说明 |
+|-----|------|
+| `new Uint8Array(buffer, byteOffset?, length?)` | 在 buffer 上创建视图，不拷贝 |
+| `typedArray.byteLength` | 视图占用的字节数 |
+| `typedArray.buffer` | 指向底层的 ArrayBuffer |
+| `typedArray.slice(start, end)` | 拷贝一段新 TypedArray |
+| `typedArray.set(array, offset)` | 从 offset 开始批量赋值 |
+
+### 应用场景
+
+- **图片像素操作**：`ctx.getImageData().data` → Uint8Array 改每个 RGBA 值
+- **二进制协议解析**：DataView 按大端/小端读 int/float
+- **WebSocket 二进制通信**：`socket.binaryType = 'arraybuffer'`
+- **WebGL 顶点数据**：Float32Array 传给 GPU
+- **加密/哈希**：`crypto.subtle.digest('SHA-256', buffer)`
+- **WASM 内存交互**：共享 WASM 的 `memory.buffer`
+- **Web Worker 零拷贝传数据**：Transferable 对象 `postMessage(buf, [buf])`
+- **音频处理**：`decodeAudioData(arrayBuffer)`
+
+---
+
+## 转换关系
+
+```js
+// Blob → ArrayBuffer（读进内存）
+const buffer = await blob.arrayBuffer()
+
+// ArrayBuffer → Blob（加上 MIME）
+const blob2 = new Blob([buffer], { type: 'image/png' })
+
+// Blob → File（加上文件名）
+const file = new File([blob], 'photo.png', { type: blob.type })
+
+// File → Blob（无损耗，File 就是 Blob）
+const blob3 = file  // 直接当 Blob 用
+
+// Blob → Base64
+function blobToBase64(blob) {
+  return new Promise(resolve => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result.split(',')[1])
+    reader.readAsDataURL(blob)
+  })
+}
+
+// Base64 → Blob
+function base64ToBlob(b64, type) {
+  const bin = atob(b64)
+  const u8 = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i)
+  return new Blob([u8], { type })
+}
+
+// ArrayBuffer 转 Base64
+function arrayBufferToBase64(buffer) {
+  const u8 = new Uint8Array(buffer)
+  const chars = u8.reduce((acc, b) => acc + String.fromCharCode(b), '')
+  return btoa(chars)
+}
+```
+
+---
+
+## 选择决策
+
+```
+需要操作文件？
+├── 只要上传/预览/下载（不改数据）→ Blob / File
+│   ├── 用户选文件 → File
+│   ├── JS 生成数据 → new Blob()
+│   └── 切片上传 → Blob.slice() + FormData
+│
+├── 要读写字节（改像素/解析协议/加密）→ ArrayBuffer
+│   └── blob.arrayBuffer() → Uint8Array → 改完转回 Blob
+│
+└── 要流式处理大文件 → ReadableStream
+    └── blob.stream() 或 fetch.body 直接传流
+```
+
+---
+
+## 上传流程完整示例
+
+```js
+// 前端：切片 + 并发上传
+async function uploadFile(file) {
+  const CHUNK_SIZE = 5 * 1024 * 1024
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+  const chunks = []
+
+  for (let i = 0; i < totalChunks; i++) {
+    chunks.push(file.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE))
+  }
+
+  async function uploadChunk(blob, index) {
+    const fd = new FormData()
+    fd.append('chunk', blob, file.name)
+    fd.append('filename', file.name)
+    fd.append('index', index)
+    fd.append('totalChunks', totalChunks)
+    return fetch('/upload', { method: 'POST', body: fd })
+  }
+
+  // 并发 3 个，失败单个重试
+  for (let i = 0; i < chunks.length; i += 3) {
+    const batch = chunks.slice(i, i + 3).map((blob, j) =>
+      uploadChunk(blob, i + j).catch(() => uploadChunk(blob, i + j))
+    )
+    await Promise.all(batch)
+  }
+
+  // 通知服务端合并
+  await fetch('/upload/merge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: file.name, totalChunks })
+  })
+}
+
+// Node 服务端：接收 + 合并
+const express = require('express')
+const fs = require('fs')
+const path = require('path')
+const multer = require('multer')
+const upload = multer({ dest: 'tmp/' })
+const app = express()
+
+app.post('/upload', upload.single('chunk'), (req, res) => {
+  const { filename, index } = req.body
+  const dir = path.join('tmp', filename)
+  fs.mkdirSync(dir, { recursive: true })
+  fs.renameSync(req.file.path, path.join(dir, `part_${index}`))
+  res.json({ ok: true })
+})
+
+app.post('/upload/merge', express.json(), (req, res) => {
+  const { filename, totalChunks } = req.body
+  const dir = path.join('tmp', filename)
+  const dest = fs.createWriteStream(path.join('uploads', filename))
+  for (let i = 0; i < totalChunks; i++) {
+    dest.write(fs.readFileSync(path.join(dir, `part_${i}`)))
+  }
+  dest.end()
+  fs.rmSync(dir, { recursive: true })
+  res.json({ ok: true })
+})
+
+app.listen(3000)
+```
