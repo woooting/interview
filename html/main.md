@@ -419,33 +419,18 @@ script2.js 会在 HTML 解析完成后，按顺序执行（无论何时加载完
 6. 网页定级评价
 7. 控制网页显示的窗口
 
-# link和@import
+# link和@import的区别
 
-`<link>` 是 **HTML 标签**，写在 HTML 文件里；而 `@import` 是 **CSS 语法规则**，写在 CSS 文件或 `<style>` 标签里
+1. **资源加载方式：并行下载 vs 串行下载**
+   `<link>` 引入多个 CSS 文件时，浏览器会**并行下载**，所有请求同时发出互不阻塞。`@import` 则是**串行下载**，后一个 CSS 文件必须等前一个下载并解析完成后才开始，加载效率较低。
 
-```
-<!-- 1. 引入外部主要样式表 -->
-<link rel="stylesheet" href="style.css">
-<!-- 2. 指定媒体查询，仅在打印时加载 -->
-<link rel="stylesheet" href="print.css" media="print">
-<!-- 3. 预加载字体文件，加快渲染 -->
-<link rel="preload" href="fonts/roboto.woff2" as="font" crossorigin>
-```
+2. **DOM 可操控性：可控 vs 不可控**
+   `<link>` 是一个标准 **DOM 标签**，可通过 JavaScript 动态创建、修改或删除，例如设置 `rel`、`href`、`media` 等属性来实现按需加载或用 `disabled` 属性切换样式表。`@import` 是 CSS 语法规则，写在 CSS 文件中，**无法通过 JS 直接操控**，也无法动态切换。
 
-```
-/* 文件: main.css */
-/* @import 必须放在所有规则之前 */
-@import url("reset.css");
-@import url("grid.css");
-@import url("https://fonts.googleapis.com/css2?family=Inter");
-```
+3. **书写位置与作用域**
+   `<link>` 写在 HTML 的 `<head>` 中，作用于整个文档，且支持 `media` 属性（如 `<link media="print">`）做条件加载。`@import` 必须写在 CSS 文件或 `<style>` 标签的**最顶部（所有规则之前）**，只能在 CSS 上下文中使用，不支持条件加载。
 
-`rel=stylesheet / rel=preload` ：
-这里的区别是 stylesheet的文件会在下载完之后立即**应用并解析**，preload的文件下载之后**缓存**，**并不会立即应用到**DOM上
-
-- `style`标签的资源解析和应用是由**渲染主线程**进行工作(**CSS解析器**),**遇到@import时不能异步等待并且会阻塞主线程的DOM构建**
-- `link`标签的资源是由 **网络线程**负责 **下载和解析** ，即使资源中存在 **import链** 也是在网络进程中等待，不会阻塞**主线层**
-  - **stylesheet：**应用场景是**首页加载的必须资源**，整个渲染路径必须等待**stylesheet的CSS资源**加载并解析后才**完成**
-  - **preload + onload：**应用场景为 **非必需但是下载时间很长的CSS资源** 在解析相关资源时 **渲染路径和首页渲染** 不会因为该资源而阻塞暂停，该资源会在 **onload**事件后应用到 **页面渲染**
+4. **浏览器兼容性与解析优先级**
+   `<link>` 支持所有浏览器，浏览器将其视为**高优先级资源**（关键渲染路径的一部分）。`@import` 在旧版 IE（IE 5-8）中存在兼容问题，且浏览器对其解析优先级较低，还可能**阻塞主线程的 DOM 构建**（因为遇到 `@import` 时需要等待串行下载完成）。
 
   

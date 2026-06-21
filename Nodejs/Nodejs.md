@@ -266,4 +266,3 @@ const __dirname = dirname(__filename)               // 当前文件所在目录
 
 > 新项目优先使用 ESM。如需兼容 CJS 生态，可用 `.mjs` 或 `type: module` + dynamic import()。
 
-
