@@ -24,11 +24,12 @@ knowledge/
 
 详见仓库根目录的 `STYLE_GUIDE.md`。
 
+## 强制规则
+
+1. **文档必须遵循 STYLE_GUIDE.md**：每次新增或修改 `.md` 文件前，必须先读取 `STYLE_GUIDE.md`，确保格式、标题层级、代码块标注、分隔线、标点等完全符合规范。
+2. **对话总结必须使用 knowledge-writer skill**：当用户要求将对话上下文中的知识总结写入知识库文档时（如"总结写入文档"、"写入知识库"、"记录到文档"、"保存"、"写进去"、"存一下"等），必须先加载 knowledge-writer skill，按其流程执行。
+
 ## 远程仓库
 
 - Remote: `https://github.com/woooting/interview.git`
 - Branch: `master`
-
-## 工作流
-
-当用户要求将对话内容写入文档时，使用 knowledge-writer skill。
