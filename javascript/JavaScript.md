@@ -2,7 +2,7 @@
 
 ## 1. 栈与堆概述
 
-### 1.1 栈内存
+**1.1 栈内存**
 
 栈是**连续内存**区域，采用**后进先出（LIFO）**结构，由系统自动分配和释放，速度快。用于存储基本类型值和引用类型的地址指针。
 
@@ -10,7 +10,7 @@
 - **自动管理**：函数调用时入栈分配，返回时自动弹栈释放
 - **访问快速**：连续内存布局，通过栈指针偏移直接读写
 
-### 1.2 堆内存
+**1.2 堆内存**
 
 堆是**非连续内存**区域，大小动态，需垃圾回收器（GC）自动回收，速度较慢。用于存储**引用类型的实际数据**。
 
@@ -18,7 +18,7 @@
 - **生命周期不定**：可能被函数外部引用，不能随函数结束自动释放
 - **通过GC回收**：当没有引用指向对象时，GC 在合适时机回收
 
-### 1.3 完整对比
+**1.3 完整对比**
 
 | 维度 | 栈 | 堆 |
 |------|-----|-----|
@@ -32,7 +32,7 @@
 
 ## 2. 引用类型为何存在堆上
 
-### 2.1 三个原因
+**2.1 三个原因**
 
 **大小不确定**：对象可动态增删属性，编译时无法确定大小，栈要求编译时知道每个变量占多少字节。
 
@@ -61,7 +61,7 @@ a.value = 2
 console.log(b.value)  // 2 — 共享堆中的同一份数据
 ```
 
-### 2.2 变量赋值的本质
+**2.2 变量赋值的本质**
 
 ```javascript
 let num = 42        // 栈：存值 42
@@ -85,7 +85,7 @@ obj2.a = 2          // obj.a 也变成 2
                                   └──────────────────┘
 ```
 
-### 2.3 闭包与堆内存
+**2.3 闭包与堆内存**
 
 闭包中的变量虽然声明在函数内，但被内部函数引用后，会被提升到**堆上存储**。因为栈帧释放后闭包还需要持有这些变量。
 
@@ -117,6 +117,7 @@ infinite()  // RangeError: Maximum call stack size exceeded
 > 闭包中的变量看似在函数内，但其实也被提升到了堆上，确保函数执行完后变量仍存活。"
 
 
+---
 # js判断数据类型的四种方式
 
 ## 1. typeof
@@ -218,6 +219,7 @@ Object.prototype.toString.call(Symbol())     // "[object Symbol]"
 | `Object.prototype.toString.call` | 所有类型 | 最全面准确，写法稍长 |
 
 
+---
 # 原型与原型链
 
 ## 1. 原型（Prototype）
@@ -233,6 +235,7 @@ Object.prototype.toString.call(Symbol())     // "[object Symbol]"
 JavaScript 对象是通过引用来传递的，我们创建的每个新对象实体中并没有一份属于自己的原型副本。当我们修改原型时，与之相关的对象也会继承这一改变。
 
 
+---
 # new 操作符内部工作步骤
 
 ## 1. 创建空对象
@@ -268,11 +271,12 @@ function myNew(constructorFn, ...args) {
 ```
 
 
+---
 # 执行上下文、作用域与闭包
 
 ## 1. 执行上下文（Execution Context）
 
-### 1.1 三种执行上下文
+**1.1 三种执行上下文**
 
 | 类型 | 创建时机 |
 |------|---------|
@@ -280,7 +284,7 @@ function myNew(constructorFn, ...args) {
 | **函数执行上下文** | 每次调用函数时创建，函数执行完毕弹出 |
 | **eval 执行上下文** | `eval()` 代码执行时创建（不推荐使用） |
 
-### 1.2 执行上下文的组成
+**1.2 执行上下文的组成**
 
 每个执行上下文包含三个核心部分：
 
@@ -306,7 +310,7 @@ function myNew(constructorFn, ...args) {
 | 用于 | `let`、`const` 声明 | `var`、函数声明（function declaration） |
 | 初始化 | 声明提升但**不初始化**（暂时性死区） | 声明提升并初始化为 `undefined`（可提前访问） |
 
-### 1.3 执行上下文的生命周期
+**1.3 执行上下文的生命周期**
 
 ```javascript
 // 全局执行上下文：JS 引擎启动时创建，页面关闭时销毁
@@ -327,11 +331,11 @@ foo()
 
 ## 2. 作用域与作用域链
 
-### 2.1 作用域的定义
+**2.1 作用域的定义**
 
 作用域是变量和函数的**可访问范围**，决定了代码在何处可以访问某个变量。JS 采用**词法作用域（静态作用域）**——变量的作用域在代码编写（定义）时就已经确定，而非在运行时。
 
-### 2.2 作用域的种类
+**2.2 作用域的种类**
 
 | 作用域类型 | 范围 | 识别方式 |
 |-----------|------|---------|
@@ -339,7 +343,7 @@ foo()
 | **函数作用域** | 函数内部 | 以 `function` 关键字或箭头函数定义的函数体 |
 | **块级作用域** | `{}` 内部 | `let` / `const` 在 `{}` 内声明即产生块级作用域 |
 
-### 2.3 作用域链
+**2.3 作用域链**
 
 当访问一个变量时，JS 引擎先从当前作用域查找，如果没找到，就通过词法环境中的**外部环境引用（[[OuterEnv]]）**逐层向外查找，直到全局作用域。这条查找路径就是**作用域链**。
 
@@ -366,7 +370,7 @@ outer()
 
 ## 3. let / const / var 区别（结合作用域）
 
-### 3.1 核心区别
+**3.1 核心区别**
 
 | 特性 | `var` | `let` | `const` |
 |------|-------|-------|---------|
@@ -376,7 +380,7 @@ outer()
 | **重新赋值** | 允许 | 允许 | 不允许（必须初始化） |
 | **挂载到全局** | 会（`window.xxx`） | 不会 | 不会 |
 
-### 3.2 变量提升（Hoisting）与暂时性死区（TDZ）
+**3.2 变量提升（Hoisting）与暂时性死区（TDZ）**
 
 ```javascript
 // var 提升：声明提升到作用域顶部，初始化为 undefined
@@ -390,7 +394,7 @@ let b = 2
 
 TDZ 从作用域开始到变量声明语句之间，该变量处于"暂时性死区"，在此期间访问会抛出 `ReferenceError`。
 
-### 3.3 经典面试题：循环中的 var 与 let
+**3.3 经典面试题：循环中的 var 与 let**
 
 ```javascript
 // 面试题：以下代码输出什么？
@@ -422,7 +426,7 @@ for (var i = 0; i < 5; i++) {
 
 ## 4. 闭包（Closure）
 
-### 4.1 闭包的定义
+**4.1 闭包的定义**
 
 闭包是指函数**记住并访问其词法作用域**的能力——即使函数在其词法作用域之外执行。
 
@@ -442,9 +446,9 @@ console.log(counter())     // 2
 // outer 的执行上下文已弹出栈，但 outer 的词法环境仍被 inner 持有引用
 ```
 
-### 4.2 闭包的应用场景
+**4.2 闭包的应用场景**
 
-#### 防抖（Debounce）
+**防抖（Debounce）**
 
 ```javascript
 function debounce(fn, delay) {
@@ -456,7 +460,7 @@ function debounce(fn, delay) {
 }
 ```
 
-#### 节流（Throttle）
+**节流（Throttle）**
 
 ```javascript
 function throttle(fn, interval) {
@@ -471,7 +475,7 @@ function throttle(fn, interval) {
 }
 ```
 
-#### 私有变量
+**私有变量**
 
 ```javascript
 function createCounter() {
@@ -484,7 +488,7 @@ function createCounter() {
 }
 ```
 
-#### 函数柯里化
+**函数柯里化**
 
 ```javascript
 function curry(fn) {
@@ -495,7 +499,7 @@ function curry(fn) {
 }
 ```
 
-### 4.3 闭包与内存泄漏
+**4.3 闭包与内存泄漏**
 
 闭包本身不泄漏，泄漏的是**被闭包持有且永远不会被释放的引用**。常见场景：
 
@@ -535,6 +539,7 @@ function setup() {
 | 组件卸载时清理副作用 | React `useEffect` 返回清理函数 |
 
 
+---
 # js中的this
 
 ## 1. this 的本质
@@ -545,7 +550,7 @@ function setup() {
 
 ## 2. 四条绑定规则
 
-### 2.1 默认绑定
+**2.1 默认绑定**
 
 裸函数调用（前面没有对象点号）时，`this` 指向全局对象。严格模式下指向 `undefined`。
 
@@ -560,7 +565,7 @@ bar()  // window —— 函数引用被剥离，变为裸调用
 
 **隐式丢失**是最常见的坑：一旦函数从对象上取出、赋值给变量或作为回调传入，就失去了隐式绑定，退回默认绑定。
 
-### 2.2 隐式绑定
+**2.2 隐式绑定**
 
 以 `对象.方法()` 的形式调用时，`this` 指向调用链上的**最后一个对象**。
 
@@ -575,11 +580,11 @@ const obj = {
 obj.child.foo()  // 'child' ← 最后一个点号前面的对象
 ```
 
-### 2.3 显式绑定（call / apply / bind）
+**2.3 显式绑定（call / apply / bind）**
 
 通过 `call`、`apply`、`bind` 显式指定 `this`，详见下一节。
 
-### 2.4 new 绑定
+**2.4 new 绑定**
 
 使用 `new` 调用构造函数时，引擎创建一个新对象作为 `this`。`new` 做了四件事：
 
@@ -651,6 +656,7 @@ new 绑定  >  显式绑定（call / apply / bind）  >  隐式绑定  >  默认
 **Reference Record 是理解隐式丢失的关键**：`const bar = obj.foo` 这个赋值操作不仅取了函数值，还丢弃了 Reference Record 中的 `base` 信息——函数被"提取"成了裸值，调用时无法再找回原本的 `this`。
 
 
+---
 # apply、call、bind 区别及底层实现原理
 
 ## 1. 语法区别
@@ -672,7 +678,7 @@ func.bind(thisArg, arg1, arg2, ...)          // 返回新函数，不立即执�
 
 ## 2. 底层实现原理
 
-### call 实现
+**call 实现**
 
 ```javascript
 Function.prototype.myCall = function(context, ...args) {
@@ -691,7 +697,7 @@ Function.prototype.myCall = function(context, ...args) {
 
 核心思想：**将函数挂到 context 对象上成为方法，以 `对象.方法()` 的方式调用，利用隐式绑定规则让 `this` 指向 context**。`Symbol` 确保不污染 context 的原有属性。
 
-### apply 实现
+**apply 实现**
 
 原理与 call 完全相同，唯一区别是参数以数组形式接收：
 
@@ -706,7 +712,7 @@ Function.prototype.myApply = function(context, args = []) {
 }
 ```
 
-### bind 实现
+**bind 实现**
 
 ```javascript
 Function.prototype.myBind = function(context, ...bindArgs) {
@@ -729,7 +735,7 @@ Function.prototype.myBind = function(context, ...bindArgs) {
 4. **`new` 优先级问题**：当 `new boundFn()` 时，`this instanceof boundFn` 为 `true`，使用新创建的对象而不是绑定的 context，确保 `new` 优先级高于 `bind`
 5. **不可二次绑定**：返回的 `boundFn` 不会再被 `bind` 影响（因为它只是一个普通函数，里面用 `apply` 固定了逻辑）
 
-### 为什么 bind 不可二次更改
+**为什么 bind 不可二次更改**
 
 ```javascript
 function fn() { console.log(this.name) }
@@ -740,18 +746,19 @@ bound2()  // 'A'，不是 'B'
 
 原因在于 `bind` 返回的是一个新的 `boundFn`，而非原来的 `fn`。对 `bound1` 它的内部实现已经固定了对原函数的 `apply(context)`，第二次 `bind` 改变的是 `boundFn` 这个包装函数的上下文，而 `boundFn` 内部调用的始终是第一次绑定时的 `context`。
 
-### 箭头函数为何失效
+**箭头函数为何失效**
 
 箭头函数没有自己的 `this`，它内部的 `this` 是从定义时词法环境捕获的常量。`call`/`apply`/`bind` 试图改变的是函数调用时的 `thisArgument` 隐式参数，但箭头函数的 `[[ThisMode]]` 是 `lexical`，引擎直接忽略这个参数——传了也白传。
 
 
+---
 # 箭头函数特性
 
 ## 1. 核心特性
 
 箭头函数除了语法更短，在语义上有 5 个核心差异：
 
-### 1.1 没有自己的 this（最重要的区别）
+**1.1 没有自己的 this（最重要的区别）**
 
 箭头函数的 `this` 是从**定义时**外层词法作用域捕获的，是一个常量，永远不会变。详见 `js中的this > 箭头函数的 this`。
 
@@ -765,7 +772,7 @@ obj.greet()       // undefined（普通函数 this → window）
 obj.greetArrow()  // 'obj'（箭头函数 this 继承自 greetArrow 的 this）
 ```
 
-### 1.2 没有 arguments 对象
+**1.2 没有 arguments 对象**
 
 箭头函数内部没有 `arguments`，需用 rest 参数替代：
 
@@ -785,7 +792,7 @@ const sum = (...args) => args.reduce((a, b) => a + b, 0)
 sum(1, 2, 3)  // 6
 ```
 
-### 1.3 不能用作构造函数
+**1.3 不能用作构造函数**
 
 箭头函数没有 `[[Construct]]` 内部方法，`new` 会直接抛出 TypeError：
 
@@ -801,7 +808,7 @@ const fn = () => {}
 console.log(fn.prototype)  // undefined
 ```
 
-### 1.4 不能用作 Generator
+**1.4 不能用作 Generator**
 
 箭头函数内部不能使用 `yield`：
 
@@ -809,7 +816,7 @@ console.log(fn.prototype)  // undefined
 const gen = () => { yield 1 }  // SyntaxError
 ```
 
-### 1.5 不能用作类方法（没有 super）
+**1.5 不能用作类方法（没有 super）**
 
 箭头函数没有 `[[HomeObject]]`，无法使用 `super`：
 
@@ -857,6 +864,7 @@ class Child2 extends Parent {
 **一句话记忆**：需要自己的 `this` 用普通函数，不需要自己的 `this` 用箭头函数。
 
 
+---
 # JavaScript为什么是单线程语言
 
 ## 1. JavaScript的诞生背景
@@ -899,6 +907,7 @@ Web Worker 提供了真正的多线程能力，但受限于 DOM 访问，主要�
 
 
 
+---
 # JavaScript事件循环
 
 ## 1. 事件循环要解决的根本问题
@@ -920,9 +929,9 @@ JavaScript 是单线程语言，这意味着它一次只能做一件事。但如
 
 ## 3. 核心数据结构
 
-### 3.1 执行栈（Call Stack）
+**3.1 执行栈（Call Stack）**
 
-#### 结构
+**结构**
 
 执行栈是**后进先出（LIFO）**的栈结构，用于管理函数的执行上下文（Execution Context）。每次调用函数，JS 引擎创建一个新的执行上下文并**压入（push）**栈顶；函数执行完毕后，从栈顶**弹出（pop）**。
 
@@ -931,7 +940,7 @@ JavaScript 是单线程语言，这意味着它一次只能做一件事。但如
 - **词法环境**（LexicalEnvironment）：`var` 声明的变量和函数声明
 - **this 绑定**：当前函数 `this` 的指向
 
-#### 工作机制
+**工作机制**
 
 ```javascript
 function a() {
@@ -968,7 +977,7 @@ a()
 | ⑥ | `b` 返回，b 的上下文弹栈 | `[global, a]` | |
 | ⑦ | `a` 内 `console.log('a end')` 执行，`a` 返回弹栈 | `[global]` | `a end` |
 
-#### 执行栈在事件循环中的角色
+**执行栈在事件循环中的角色**
 
 执行栈是事件循环的**闸门**。事件循环的核心逻辑可以简化为：
 
@@ -991,7 +1000,7 @@ while (true) {}   // 同步代码块，直接卡死
 setTimeout(() => console.log('永远不会执行'), 0)
 ```
 
-### 3.2 任务队列
+**3.2 任务队列**
 
 事件循环使用两个队列管理异步回调：
 
@@ -1002,13 +1011,13 @@ setTimeout(() => console.log('永远不会执行'), 0)
 
 ## 4. 任务类型详解
 
-### 4.1 宏任务（Macro Task）
+**4.1 宏任务（Macro Task）**
 
-#### 定义
+**定义**
 
 由宿主环境发起的异步任务。每次事件循环从宏任务队列中**取出一个**压入执行栈。
 
-#### 常见宏任务
+**常见宏任务**
 
 | 来源 | 示例 |
 |------|------|
@@ -1019,7 +1028,7 @@ setTimeout(() => console.log('永远不会执行'), 0)
 | 浏览器渲染 | `requestAnimationFrame`（部分浏览器归为宏任务） |
 | Node.js | `setImmediate`、`I/O 回调` |
 
-#### 宏任务的优先级：任务源（Task Source）
+**宏任务的优先级：任务源（Task Source）**
 
 HTML 规范定义多个**任务源**，不同任务源的宏任务进入**独立的队列**。浏览器按优先级从不同队列中取任务：
 
@@ -1035,13 +1044,13 @@ HTML 规范定义多个**任务源**，不同任务源的宏任务进入**独立
 
 **为什么有优先级？** 用户交互的响应速度比定时器的触发更重要。如果所有宏任务都在一个队列里，一个耗时的 `setTimeout` 回调会阻塞点击事件的响应。多队列机制保证高优先级任务不会被低优先级任务阻塞。
 
-### 4.2 微任务（Micro Task）
+**4.2 微任务（Micro Task）**
 
-#### 定义
+**定义**
 
 由 JS 引擎自身发起的异步任务。当前宏任务的同步代码执行完后、下一个宏任务开始前，**一次性清空整个微任务队列**。
 
-#### 常见微任务
+**常见微任务**
 
 | 来源 | 示例 | 说明 |
 |------|------|------|
@@ -1131,7 +1140,7 @@ HTML 规范定义多个**任务源**，不同任务源的宏任务进入**独立
 
 以下示例逐步增加复杂度，展示如何用两条铁则推导出执行结果。
 
-### 示例 1：基础
+**示例 1：基础**
 
 ```javascript
 console.log('1')
@@ -1147,7 +1156,7 @@ console.log('3')
 // 输出：1 → 3 → 2
 ```
 
-### 示例 2：微任务
+**示例 2：微任务**
 
 ```javascript
 console.log('1')
@@ -1168,7 +1177,7 @@ console.log('5')
 // 输出：1 → 5 → 4 → 2 → 3
 ```
 
-### 示例 3：微任务嵌套
+**示例 3：微任务嵌套**
 
 ```javascript
 console.log('start')
@@ -1193,7 +1202,7 @@ console.log('end')
 // 输出：start → end → 微1 → 微2 → 微3 → 宏
 ```
 
-### 示例 4：宏任务嵌套
+**示例 4：宏任务嵌套**
 
 ```javascript
 setTimeout(() => {
@@ -1215,13 +1224,14 @@ setTimeout(() => console.log('宏3'), 0)
 // 输出：宏1 → 微 → 宏3 → 宏2
 ```
 
+---
 # JavaScript事件
 
 ## 1. 事件模型（DOM 事件标准）
 
 DOM 事件模型经历了三个阶段：
 
-### DOM0 级事件
+**DOM0 级事件**
 
 直接给元素事件属性赋值，同一事件只能绑定**一个**处理函数，后绑定覆盖前者。
 
@@ -1230,7 +1240,7 @@ btn.onclick = function() { console.log('clicked'); };
 btn.onclick = null; // 解绑
 ```
 
-### DOM2 级事件
+**DOM2 级事件**
 
 通过 `addEventListener` / `removeEventListener` 绑定与解绑，同一事件可绑定**多个**处理函数，按注册顺序执行。支持控制触发阶段。
 
@@ -1242,7 +1252,7 @@ btn.removeEventListener('click', handler, useCapture);
 - 第三个参数 `useCapture`：`false`（**默认**）冒泡阶段触发，`true` 捕获阶段触发
 - 也可传入配置对象：`{ once: true, capture: true, passive: true }`
 
-### IE 事件模型（已淘汰）
+**IE 事件模型（已淘汰）**
 
 `attachEvent` / `detachEvent`，仅有冒泡阶段，事件名需加 `on` 前缀。IE11+ 已全面支持 DOM2 标准。
 
@@ -1277,7 +1287,7 @@ btn.removeEventListener('click', handler, useCapture);
 | 表单事件 | `submit`、`reset` | 表单提交/重置时在 `<form>` 上触发（不冒泡到 document 以上） |
 | 输入事件 | `input`、`change` | 少数场景下不冒泡 |
 
-### 常用事件类型速查
+**常用事件类型速查**
 
 | 分类 | 事件名 | 说明 |
 |------|--------|------|
@@ -1323,9 +1333,9 @@ btn.removeEventListener('click', handler, useCapture);
 
 利用事件冒泡，将子元素的事件统一绑定到祖先元素上，通过 `event.target` 判断实际触发源。
 
-### 获取目标 DOM 元素的方式
+**获取目标 DOM 元素的方式**
 
-#### 1. tagName 判断（简单匹配标签名）
+**1. tagName 判断（简单匹配标签名）**
 
 ```javascript
 ul.addEventListener('click', function(e) {
@@ -1335,7 +1345,7 @@ ul.addEventListener('click', function(e) {
 });
 ```
 
-#### 2. matches() 判断（支持 CSS 选择器）
+**2. matches() 判断（支持 CSS 选择器）**
 
 ```javascript
 ul.addEventListener('click', function(e) {
@@ -1345,7 +1355,7 @@ ul.addEventListener('click', function(e) {
 });
 ```
 
-#### 3. closest() 向上查找（推荐，处理嵌套子元素）
+**3. closest() 向上查找（推荐，处理嵌套子元素）**
 
 ```html
 <li><span>点我</span></li>
@@ -1369,7 +1379,7 @@ ul.addEventListener('click', function(e) {
 | `e.target.matches(selector)` | CSS 选择器精确匹配 | ❌ 不处理 |
 | `e.target.closest(selector)` | 通用场景，有嵌套 | ✅ 自动向上查找 |
 
-### 事件委托的优势
+**事件委托的优势**
 
 - 减少监听器数量，提升性能
 - 动态添加的子元素自动生效，无需重新绑定
@@ -1378,7 +1388,7 @@ ul.addEventListener('click', function(e) {
 
 ## 6. Vue 与 React 中绑定多个事件
 
-### Vue
+**Vue**
 
 ```html
 <!-- 不同事件直接并列 -->
@@ -1388,7 +1398,7 @@ ul.addEventListener('click', function(e) {
 <button @click="onClick1(); onClick2()">按钮</button>
 ```
 
-### React
+**React**
 
 ```jsx
 // 不同事件
@@ -1400,6 +1410,7 @@ ul.addEventListener('click', function(e) {
 
 本质都是在一个函数体内串行调用，事件机制本身不限制回调数量。
 
+---
 # Fetch 与 Ajax (XHR)
 
 Ajax 是基于 `XMLHttpRequest` 的事件回调方案；Fetch 是 ES6 基于 Promise 的原生 API。核心区别如下：
@@ -1478,6 +1489,7 @@ Ajax 是基于 `XMLHttpRequest` 的事件回调方案；Fetch 是 ES6 基于 Pro
 传统表单/链接请求会卸载整页重新加载；Ajax/Fetch 将请求控制权交给 JS，网络线程异步通信不阻塞主线程，拿到响应数据后通过 DOM API 局部更新页面，无需整页替换。同时浏览器不会卸载当前页面，页面状态得以保持。
 
 
+---
 # 路由加载
 在现代 SPA 应用中，前端路由系统通过 **hash** 或 **history** 模式实现页面切换，两者核心区别在于是否会导致浏览器重新请求 HTML 文件。
 
@@ -1500,6 +1512,7 @@ Ajax 是基于 `XMLHttpRequest` 的事件回调方案；Fetch 是 ES6 基于 Pro
 - **低频访问页面**：仅动态 `import()`，按需加载。
 
 
+---
 # File、Blob、ArrayBuffer
 
 ## 关系总览
@@ -1517,7 +1530,7 @@ ArrayBuffer 是底层二进制缓冲区，可被 Blob 引用，也可通过 Type
      Uint8Array / DataView（操作 ArrayBuffer 的视图）
 ```
 
-### 核心区别
+**核心区别**
 
 | 维度 | Blob / File | ArrayBuffer |
 |------|-------------|-------------|
@@ -1531,11 +1544,11 @@ ArrayBuffer 是底层二进制缓冲区，可被 Blob 引用，也可通过 Type
 
 ## Blob
 
-### 是什么
+**是什么**
 
 不可变的二进制数据容器，代表一个"文件片段"，有 `size` 和 `type`（MIME 类型）。
 
-### 常见来源
+**常见来源**
 
 ```js
 new Blob(['hello'], { type: 'text/plain' })
@@ -1544,7 +1557,7 @@ fetch(url).then(r => r.blob())
 file.slice()         // ⚠️ 返回 Blob，不是 File
 ```
 
-### 常见 API
+**常见 API**
 
 | API | 说明 | 返回值 |
 |-----|------|--------|
@@ -1555,7 +1568,7 @@ file.slice()         // ⚠️ 返回 Blob，不是 File
 | `blob.arrayBuffer()` | 读为 ArrayBuffer | Promise\<ArrayBuffer\> |
 | `blob.stream()` | 读为 ReadableStream | ReadableStream |
 
-### 应用场景
+**应用场景**
 
 - **JS 生成文件下载**：`new Blob([data], { type })` → `URL.createObjectURL(blob)` → `<a download>`
 - **切片上传**：`file.slice(...)` 切出多块，放入 FormData 发送
@@ -1565,7 +1578,7 @@ file.slice()         // ⚠️ 返回 Blob，不是 File
 
 ## File
 
-### 是什么
+**是什么**
 
 Blob 的子类，增加了文件名和最后修改时间。
 
@@ -1573,7 +1586,7 @@ Blob 的子类，增加了文件名和最后修改时间。
 File.prototype.__proto__ === Blob.prototype  // true
 ```
 
-### 常见来源
+**常见来源**
 
 ```js
 <input type="file"> .files[0]
@@ -1581,7 +1594,7 @@ File.prototype.__proto__ === Blob.prototype  // true
 new File([blob], 'name.txt', { type: 'text/plain', lastModified: Date.now() })
 ```
 
-### 额外属性
+**额外属性**
 
 | 属性 | 说明 |
 |------|------|
@@ -1589,7 +1602,7 @@ new File([blob], 'name.txt', { type: 'text/plain', lastModified: Date.now() })
 | `file.lastModified` | 最后修改时间戳 |
 | `file.webkitRelativePath` | 目录上传时的相对路径 |
 
-### 应用场景
+**应用场景**
 
 - **用户上传文件**：`<input type="file">` 拿到的就是 File
 - **需要文件名时**：切片上传时用 `file.name` 传给服务端做标识
@@ -1599,11 +1612,11 @@ new File([blob], 'name.txt', { type: 'text/plain', lastModified: Date.now() })
 
 ## ArrayBuffer
 
-### 是什么
+**是什么**
 
 内存中一段固定长度的原始二进制缓冲区，**不能直接读写**，必须通过 TypedArray 或 DataView 操作。
 
-### 常见来源
+**常见来源**
 
 ```js
 new ArrayBuffer(1024)                        // 创建 1KB 的缓冲区
@@ -1613,7 +1626,7 @@ reader.readAsArrayBuffer(file)               // FileReader 方式
 crypto.subtle.digest('SHA-256', buffer)      // 加密 API 返回 ArrayBuffer
 ```
 
-### 视图操作
+**视图操作**
 
 ```js
 const buf = new ArrayBuffer(8)
@@ -1628,7 +1641,7 @@ const dv  = new DataView(buf)      // 混合类型 + 控制字节序
 u8[0] = 0xFF  // 直接改字节
 ```
 
-### 常见 API（TypedArray）
+**常见 API（TypedArray）**
 
 | API | 说明 |
 |-----|------|
@@ -1638,7 +1651,7 @@ u8[0] = 0xFF  // 直接改字节
 | `typedArray.slice(start, end)` | 拷贝一段新 TypedArray |
 | `typedArray.set(array, offset)` | 从 offset 开始批量赋值 |
 
-### 应用场景
+**应用场景**
 
 - **图片像素操作**：`ctx.getImageData().data` → Uint8Array 改每个 RGBA 值
 - **二进制协议解析**：DataView 按大端/小端读 int/float
@@ -1780,11 +1793,12 @@ app.post('/upload/merge', express.json(), (req, res) => {
 app.listen(3000)
 ```
 
+---
 # 可选链和空值合并符
 
 ## 1. 可选链（Optional Chaining）`?.`
 
-### 作用
+**作用**
 
 `?.` 允许在访问深层嵌套的对象属性时，如果中间某个值为 `null` 或 `undefined`，立即短路返回 `undefined`，而不是抛出 `TypeError`。
 
@@ -1793,7 +1807,7 @@ app.listen(3000)
 - `obj?.[expr]` — 安全动态属性访问
 - `func?.()` — 安全调用函数
 
-### 对比示例
+**对比示例**
 
 ```javascript
 // 没有可选链：中间属性为 null/undefined 时报错
@@ -1816,7 +1830,7 @@ const city = user && user.profile && user.profile.address && user.profile.addres
 const city = user?.profile?.address?.city
 ```
 
-### 适用场景
+**适用场景**
 
 | 场景 | 说明 |
 |------|------|
@@ -1829,11 +1843,11 @@ const city = user?.profile?.address?.city
 
 ## 2. 空值合并符（Nullish Coalescing）`??`
 
-### 作用
+**作用**
 
 `??` 仅在左侧表达式为 `null` 或 `undefined` 时返回右侧默认值。与 `||` 的核心区别：`??` 不会将 `''`、`0`、`false` 视为"空值"而替换。
 
-### 对比示例
+**对比示例**
 
 ```javascript
 // || 的陷阱：所有假值都会被替换
@@ -1849,7 +1863,7 @@ const value = null ?? '默认'  // '默认'（null 才替换）
 const value2 = undefined ?? '默认'  // '默认'
 ```
 
-### 适用场景
+**适用场景**
 
 | 场景 | 说明 |
 |------|------|
@@ -1873,6 +1887,7 @@ const city = user?.profile?.address?.city ?? '未知城市'
 
 ---
 
+---
 # 内存泄露
 
 ## 1. 导致前端内存泄露的常见情况

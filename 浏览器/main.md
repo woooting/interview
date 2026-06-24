@@ -6,11 +6,11 @@
 
 强缓存通过请求头中设置的Expires和Cache-Control来控制，其中Expires是http1.0时的协商缓存请求头，Cache-Control是http1.1推出的请求头，现代浏览器大部分情况下使用Cache-Control来控制强缓存。
 
-### Expires
+**Expires**
 
 Expires是通过设置绝对时间来控制强缓存的时间的，如Expires: Wed, 21 Oct 2025 07:28:00 GMT。这就导致用户可以通过修改系统时间来导致强缓存失效，所以Cache-Control出现之后Expires就基本不使用了。
 
-### Cache-Control
+**Cache-Control**
 
 Cache-Control的主要属性值包括：
 
@@ -22,13 +22,13 @@ Cache-Control的主要属性值包括：
 - **must-revalidate**：缓存过期后必须向服务器验证
 - **immutable**：资源在有效期内不会改变（适合版本化资源）
 
-### 缓存位置（内存 vs 磁盘）
+**缓存位置（内存 vs 磁盘）**
 
 当要请求一个资源时，如果启用了强缓存，第一次缓存会请求服务器然后会将资源缓存到本地内存或磁盘，如果缓存没有过期的情况下再次请求就会直接从内存或磁盘拿数据，不会请求服务器，大幅减少了服务器压力，也提高了前端的响应速度。
 
 那么什么时候存到内存，什么时候存到磁盘呢？一般来说体积小、多次复用、过期时间短的会存在内存，反之存到磁盘，这时由浏览器决定的，是一个黑盒的过程，但是我们可以通过某种手段去影响浏览器的判断，比如将过期时间设置的短一点，就越有可能存到内存中。
 
-### 优缺点
+**优缺点**
 
 优点是设置了过期时间之后不会请求服务器，减少了服务器的压力和宽带开销；缺点是过期时间之前缓存的数据是不会更新的，如果服务器的数据更新了，但是本地缓存还没有过期，就会导致数据不同步的问题，所以，一般来讲，强缓存要存储不常改变的资源，如vue.js
 
@@ -36,31 +36,33 @@ Cache-Control的主要属性值包括：
 
 协商缓存通过服务端返回的响应头 `Last-Modified`/`ETag`，与浏览器后续请求自动携带的请求头 `If-Modified-Since`/`If-None-Match` 配合控制。其中 `Last-Modified`/`If-Modified-Since` 是 HTTP/1.0 引入的机制，`ETag`/`If-None-Match` 是 HTTP/1.1 推出的新方案（更精确），现代浏览器大部分情况下优先使用 ETag。
 
-### Last-Modified / If-Modified-Since
+**Last-Modified / If-Modified-Since**
 
 Last-Modified（If-Modified-Since）是通过判断文件的修改时间来确定是否使用缓存资源的，不论是否真正的修改内容。这就导致某些情况下浪费宽带
 
-### ETag / If-None-Match
+**ETag / If-None-Match**
 
 ETag （If-None-Match）是通过判断文件的内容是否修改来确定是否使用缓存的，相比于Last-Modified（If-Modified-Since）更加精细实用。具体的过程是，当启用Etag协商缓存时，第一次请求并不会携带请求验证，服务器在返回资源时会在响应头中返回一个Etag，这个值是服务器根据资源内容生成的唯一标识符，当下次请求时就会在请求头带入If-None-Match，值就是第一次请求时返回的Etag值。请求过去的时候服务器会比较If-None-Match和新的Etag值是否一样，如果一样就返回**304 Not Modified**不返回资源，意思是通知前端资源没有变可以从浏览器拿取缓存，如果值不一样，说明资源改变，这时就返回200状态码并返回新的资源
 
-### 优缺点
+**优缺点**
 
 优势是可以实时的更新最新数据不害怕资源过期，但是比起强缓存，协商缓存多了网络请求的往返，这样会导致网络延迟的发生。所以协商缓存适合动态内容、API响应、可能频繁更新的资源（如未版本化的HTML）
+
+---
 
 # 浏览器存储
 
 ## 存储方式
 
-### localStorage
+**localStorage**
 
 便于客户端储存数据，在**本地保存**(需要手动删除)，可储存大小5MB以上，以键值对(Key-Value)的方式存储，多页面共享
 
-### sessionStorage
+**sessionStorage**
 
 不在不同的浏览器页面中共享，即使是同一个页面，数据在当前浏览器关闭后自动删除
 
-### cookie
+**cookie**
 
 通过请求头发送给服务器，最大4kb，每次都会携带。
 
@@ -68,7 +70,7 @@ ETag （If-None-Match）是通过判断文件的内容是否修改来确定是�
 
 ## 应用场景
 
-### localStorage
+**localStorage**
 
 - **用户设置**：主题（深色/浅色）、语言偏好、字体大小
 - **不常变动的静态数据**：省市区数据、配置信息
@@ -76,7 +78,7 @@ ETag （If-None-Match）是通过判断文件的内容是否修改来确定是�
 - **最近浏览记录**：不敏感的浏览历史
 - **新手引导标记**：是否已展示过引导
 
-### sessionStorage
+**sessionStorage**
 
 - **表单草稿**：多步骤表单的临时数据
 - **页面内状态**：当前页面的滚动位置、选项卡索引
@@ -84,7 +86,7 @@ ETag （If-None-Match）是通过判断文件的内容是否修改来确定是�
 - **刷页面保留数据**：防止刷新丢失的临时数据
 - **多标签页隔离的数据**：不同标签页需要独立的状态
 
-### cookie
+**cookie**
 
 - **会话标识**：Session ID（配合 HttpOnly）
 - **用户认证**：Token 存储（需配合 Secure、SameSite）
@@ -97,34 +99,36 @@ ETag （If-None-Match）是通过判断文件的内容是否修改来确定是�
 
 需要注意的是，不是什么数据都适合放在 Cookie、localStorage 和 sessionStorage 中的，因为它们保存在本地容易被篡改，使用它们的时候，需要时刻注意是否有代码存在 XSS 注入的风险。所以千万不要用它们存储你系统中的敏感数据。
 
+---
+
 # 跨标签页通信
 
 ## BroadcastChannel
 
-### 原理
+**原理**
 
 可以视作**发布-订阅**的实现，**遵循同源协议**
 
-### 优势
+**优势**
 
 - API 极其简单，几行代码即可实现
 - 性能最优，延迟最低
 - 自动处理页面关闭，无需手动清理
 - 不依赖存储空间
 
-### 劣势
+**劣势**
 
 - 不支持点对点通信（只有广播）
 - 无法持久化消息
 - 较新的 API，IE 不支持
 
-### 适用场景
+**适用场景**
 
 - 简单的广播通知
 - 实时状态同步
 - 现代浏览器项目
 
-### 示例代码
+**示例代码**
 
 ```js
 // 标签页 A (发送方)
@@ -143,30 +147,30 @@ channel.onmessage = (event) => {
 
 ## window.postMessage
 
-### 原理
+**原理**
 
 HTML5 提供的跨窗口消息传递 API，主要用于父窗口与 iframe 之间通信。
 
-### 优势
+**优势**
 
 - 可以跨域通信
 - 性能优秀
 - 安全（可验证来源）
 - 支持双向通信
 
-### 劣势
+**劣势**
 
 - 只能在有直接引用关系的窗口间使用
 - 需要明确的窗口引用
 - 不适合多标签页通信
 
-### 适用场景
+**适用场景**
 
 - 父页面与 iframe 通信
 - 跨域嵌入式应用
 - 第三方组件集成
 
-### 示例代码
+**示例代码**
 
 ```js
 // 父窗口
@@ -185,31 +189,31 @@ window.addEventListener('message', (event) => {
 
 ## localStorage + storage 事件
 
-### 原理
+**原理**
 
 利用 localStorage 的 storage 事件，当一个页面修改 localStorage 时，同源的其他页面会触发 storage 事件。
 
-### 优势
+**优势**
 
 - 兼容性最好（IE8+）
 - 实现简单
 - 数据持久化
 - 不需要服务器
 
-### 劣势
+**劣势**
 
 - 有存储空间限制（5-10MB）
 - 延迟较高（10-50ms）
 - 修改页面本身不触发 storage 事件
 - 同步操作，可能阻塞主线程
 
-### 适用场景
+**适用场景**
 
 - 需要兼容旧浏览器
 - 简单的状态同步
 - 需要数据持久化
 
-### 示例代码
+**示例代码**
 
 ```js
 // 标签页 A (修改存储)
@@ -230,30 +234,30 @@ window.addEventListener('storage', (event) => {
 
 ## SharedWorker
 
-### 原理
+**原理**
 
 多个页面共享的 Worker 线程，通过 MessagePort 进行双向通信。
 
-### 优势
+**优势**
 
 - 性能优秀，延迟极低
 - 支持点对点和广播
 - 不需要 HTTPS
 - 资源共享（减少重复计算）
 
-### 劣势
+**劣势**
 
 - Safari 需要手动开启实验性功能
 - 所有页面关闭后 Worker 终止
 - 调试相对困难
 
-### 适用场景
+**适用场景**
 
 - 需要共享计算资源
 - 复杂的页面间通信
 - 不需要持久化运行
 
-### 示例代码
+**示例代码**
 
 ```js
 // shared-worker.js
@@ -279,31 +283,31 @@ worker.port.postMessage('大家好呀！');
 
 ## Service Worker
 
-### 原理
+**原理**
 
 运行在浏览器后台的独立脚本，不依赖页面生命周期，可以在页面关闭后继续运行。
 
-### 优势
+**优势**
 
 - 持久化运行，页面关闭后仍可工作
 - 支持离线缓存（PWA 核心技术）
 - 可以拦截网络请求
 - 支持推送通知
 
-### 劣势
+**劣势**
 
 - 必须使用 HTTPS（开发环境可用 localhost）
 - 首次注册需要刷新页面
 - 实现复杂度较高
 - 调试相对困难
 
-### 适用场景
+**适用场景**
 
 - PWA 应用
 - 需要离线功能
 - 复杂的跨页面通信和资源管理
 
-### 示例代码
+**示例代码**
 
 ```js
 // service-worker.js
@@ -324,6 +328,8 @@ navigator.serviceWorker.controller.postMessage('快递到啦！');
 ```
 
 **文章参考链接** [通信方案大全及其应用对比](https://juejin.cn/post/7593252939709677604)
+
+---
 
 # 浏览器渲染路径
 
@@ -370,6 +376,8 @@ navigator.serviceWorker.controller.postMessage('快递到啦！');
 - 上面的步骤完成之后，渲染进程就会通过IPC向浏览器进程（browser process）提交（commit）一个合成帧compositor frame；
 - 合成帧都会被发送给GPU从而展示在屏幕上。如果浏览器监听到页面滚动事件，就会通知渲染进程构建另外一个合成帧来更新页面；
 
+---
+
 # 跨域与同源策略
 
 ## 同源策略
@@ -382,7 +390,7 @@ navigator.serviceWorker.controller.postMessage('快递到啦！');
 
 ## 跨域解决方案
 
-### 1. CORS（跨域资源共享）
+**1. CORS（跨域资源共享）**
 
 服务端通过 HTTP 响应头告知浏览器允许跨域，是最主流的方案。
 
@@ -405,7 +413,7 @@ navigator.serviceWorker.controller.postMessage('快递到啦！');
 | `Access-Control-Request-Method` | 预检请求中，告知实际请求的 HTTP 方法 |
 | `Access-Control-Request-Headers` | 预检请求中，告知实际请求的自定义头 |
 
-#### 简单请求 vs 复杂请求
+**简单请求 vs 复杂请求**
 
 **简单请求**需同时满足以下条件：
 
@@ -420,7 +428,7 @@ navigator.serviceWorker.controller.postMessage('快递到啦！');
 
 复杂请求会在实际请求前**自动发送一次 OPTIONS 预检请求**，询问服务端是否允许该跨域请求。
 
-```
+```http
 // 预检请求（浏览器自动发出）
 OPTIONS /api/data HTTP/1.1
 Origin: https://example.com
@@ -473,7 +481,7 @@ res.setHeader('Access-Control-Allow-Credentials', 'true');
 // 注意：Allow-Origin 不能为 *
 ```
 
-### 2. JSONP
+**2. JSONP**
 
 利用 `<script>` 标签不受同源策略限制，通过动态创建 script 标签加载跨域数据。
 
@@ -499,7 +507,7 @@ app.get('/data', (req, res) => {
 
 **缺点：** 只支持 GET，需要服务端配合，无法处理错误，存在安全风险（XSS）。
 
-### 3. 代理转发
+**3. 代理转发**
 
 同源策略只限制浏览器，浏览器与服务器之间通过代理转发，让请求走同源路径。
 
@@ -531,7 +539,7 @@ server {
 }
 ```
 
-### 4. postMessage
+**4. postMessage**
 
 `window.postMessage` 允许不同源的 iframe 或窗口之间安全通信。
 
@@ -549,7 +557,7 @@ window.addEventListener('message', (event) => {
 });
 ```
 
-### 5. WebSocket
+**5. WebSocket**
 
 WebSocket 协议本身不受同源策略限制，握手时通过 `Origin` 头验证。
 
@@ -560,7 +568,7 @@ ws.onopen = () => ws.send('连接建立');
 ws.onmessage = (event) => console.log(event.data);
 ```
 
-### 6. document.domain
+**6. document.domain**
 
 适用于主域名相同的跨子域通信（如 `a.example.com` 和 `b.example.com`）。
 

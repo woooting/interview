@@ -17,7 +17,7 @@
 
 ## 1. 响应式原理
 
-### 1.1 ref 的内部分支逻辑
+**1.1 ref 的内部分支逻辑**
 
 `ref()` 接收一个值后，会根据数据类型走两条不同的路径：
 
@@ -28,7 +28,7 @@
 
 **无论哪种路径，最终都返回一个 `{ value: xxx }` 形状的 wrapper 对象。** 所以读写时必须 `.value`——你操作的是这个 wrapper 的 `value` 属性，只有通过 getter/setter 才能触发依赖收集和派发更新。
 
-### 1.2 reactive 的工作原理：Proxy 代理
+**1.2 reactive 的工作原理：Proxy 代理**
 
 `reactive()` 使用 ES6 的 `Proxy` 对目标对象进行全量代理：
 
@@ -52,7 +52,7 @@ const proxy = new Proxy(raw, {
 
 每次对代理对象的属性进行**读取**时，拦截 `get` → 执行 `track()` 收集依赖；**写入**时，拦截 `set` → 执行 `trigger()` 通知更新。
 
-### 1.3 为什么 Proxy 只能代理引用类型
+**1.3 为什么 Proxy 只能代理引用类型**
 
 - Proxy 的构造函数签名为 `new Proxy(target, handler)`，`target` **必须是对象**（Object / Array / Function 等）。
 - 基本类型（如 `42`、`"hello"`）在 JS 中是**值类型**，没有引用地址，无法被 `Proxy` 包装拦截。
@@ -60,7 +60,7 @@ const proxy = new Proxy(raw, {
 
 ## 2. 示例代码
 
-### ref 处理基本类型
+**ref 处理基本类型**
 
 ```js
 function ref(value) {
@@ -97,7 +97,7 @@ console.log(name.value)       // '张三'  ← 走 get value() → track 收集�
 name.value = '李四'            // 走 set value() → trigger 派发更新
 ```
 
-### ref 处理引用类型（内部转 reactive）
+**ref 处理引用类型（内部转 reactive）**
 
 ```js
 function ref(value) {
@@ -142,7 +142,7 @@ state.value.count = 1     // ✅ 正确：先取 .value 拿到 proxy，再改 .c
 // state.count = 1        // ❌ 错误：RefImpl 上没有 count 属性，改了也不会触发更新
 ```
 
-### reactive 直接代理对象
+**reactive 直接代理对象**
 
 ```js
 const state = reactive({ count: 0 })
@@ -160,7 +160,7 @@ track()        收集依赖——记录"哪个 effect 依赖了哪个响应式�
 trigger()      派发更新——数据变化时，找到所有依赖它的 effect 重新执行
 ```
 
-### 3.1 核心数据结构
+**3.1 核心数据结构**
 
 ```js
 // 全局 targetMap: WeakMap<target, Map<key, Set<effect>>>
@@ -175,7 +175,7 @@ const targetMap = new WeakMap()
 let activeEffect = null  // 当前正在执行的 effect
 ```
 
-### 3.2 track —— 依赖收集
+**3.2 track —— 依赖收集**
 
 ```js
 function track(target, key) {
@@ -202,7 +202,7 @@ function track(target, key) {
 }
 ```
 
-### 3.3 trigger —— 派发更新
+**3.3 trigger —— 派发更新**
 
 ```js
 function trigger(target, key) {
@@ -220,7 +220,7 @@ function trigger(target, key) {
 }
 ```
 
-### 3.4 effect —— 注册副作用
+**3.4 effect —— 注册副作用**
 
 ```js
 function effect(fn) {
@@ -249,7 +249,7 @@ function cleanup(effectFn) {
 }
 ```
 
-### 3.5 完整流程示意
+**3.5 完整流程示意**
 
 ```
 1. 组件初始化
@@ -271,11 +271,11 @@ function cleanup(effectFn) {
 
 ## 4. 为什么 template 中 ref 不需要 .value
 
-### 4.1 编译器的语法糖
+**4.1 编译器的语法糖**
 
 Vue 的 SFC（单文件组件）在编译阶段，`<template>` 会被编译成 `render` 函数。编译器**自动识别 ref 变量**，在生成的代码中追加 `.value`。
 
-### 4.2 编译前后对比
+**4.2 编译前后对比**
 
 **模板代码：**
 
@@ -305,7 +305,7 @@ function render(ctx) {
 }
 ```
 
-### 4.3 关键结论
+**4.3 关键结论**
 
 | 场景 | 是否需要 .value | 原因 |
 |---|---|---|
@@ -328,14 +328,14 @@ function render(ctx) {
 
 ## 2. 三种"暴露"机制
 
-### 2.1 选项式 API（Vue 2 风格）
+**2.1 选项式 API（Vue 2 风格）**
 
 - 变量必须写在 `data() { return {...} }`
 - 方法必须写在 `methods: {...}`
 - 框架自动读取并挂载到组件实例上，模板通过 `this.xxx` 访问
 - **暴露是隐式的**，由 Vue 内部统一处理
 
-### 2.2 普通 `<script>` + 组合式 API
+**2.2 普通 `<script>` + 组合式 API**
 
 ```js
 import { ref } from 'vue'
@@ -356,7 +356,7 @@ export default {
 - **必须手动 return** 告诉 Vue 哪些变量暴露给模板
 - 组件要手动注册到 `components`
 
-### 2.3 `<script setup>`（语法糖）
+**2.3 `<script setup>`（语法糖）**
 
 ```vue
 <script setup>
@@ -391,24 +391,24 @@ export default {
 
 ## 4. 几个深层细节
 
-### 4.1 为什么"自动"能成立
+**4.1 为什么"自动"能成立**
 
 - `<script setup>` 整个文件的顶层作用域 = `setup` 函数体的作用域
 - 编译器做一次 AST 扫描，把所有顶层声明收集到返回对象
 - **纯静态分析**，无反射、无 Proxy 黑魔法
 
-### 4.2 顶层 import 的组件自动注册
+**4.2 顶层 import 的组件自动注册**
 
 - 编译器把所有 `import X from './X.vue'` 收集起来
 - 自动生成 `components: { X }`，省去手写注册
 
-### 4.3 默认私有性
+**4.3 默认私有性**
 
 - `<script setup>` 所有顶层绑定**仅在当前组件模板和内部可见**
 - 不会挂到组件实例上，父组件用 `ref` 拿不到
 - 如需对外暴露，需用 `defineExpose({ count })` 显式声明
 
-### 4.4 编译时宏
+**4.4 编译时宏**
 
 - `defineProps` / `defineEmits` / `defineModel` / `defineExpose` / `defineOptions` / `defineSlots`
 - 看起来像函数，**但不会被 import，也没有运行时实现**
@@ -421,9 +421,9 @@ export default {
 
 ## 1. 钩子列表与执行顺序
 
-### 1.1 完整钩子列表
+**1.1 完整钩子列表**
 
-#### 组合式 API
+**组合式 API**
 
 | 钩子 | 触发时机 |
 |---|---|
@@ -439,7 +439,7 @@ export default {
 | `onRenderTracked` | 渲染时追踪到响应式依赖（调试用） |
 | `onRenderTriggered` | 响应式依赖触发重新渲染时（调试用） |
 
-#### 选项式 API 对照
+**选项式 API 对照**
 
 | 选项式 | 对应组合式 |
 |---|---|
@@ -457,14 +457,14 @@ export default {
 | `renderTracked` | `onRenderTracked` |
 | `renderTriggered` | `onRenderTriggered` |
 
-#### 关键注意点
+**关键注意点**
 
 - **没有 `onBeforeCreate` / `onCreated`** —— setup 函数本身就是 created 阶段
 - `onMounted` / `onUpdated` 走 **post flush 队列**（微任务），不在 patch 同步流程里
 - 调试钩子 `onRenderTracked` / `onRenderTriggered` 只在开发模式生效
 - `onErrorCaptured` 返回 `false` 可以阻止错误继续向上传播
 
-### 1.2 完整执行顺序（时间线）
+**1.2 完整执行顺序（时间线）**
 
 ```
 setup()                    ← 同步执行，不是钩子，是初始化函数
@@ -490,7 +490,7 @@ onBeforeUnmount            ← 卸载前（同步）
 onUnmounted                ← 卸载完成（同步）
 ```
 
-### 1.3 关键规则
+**1.3 关键规则**
 
 - **挂载周期只走一次**：首次 patch 后 `instance.isMounted = true`，之后所有 effect 重跑都走更新分支
 - **更新周期可触发多次**：每次响应式数据变化都会重新 patch，触发 beforeUpdate / updated
@@ -499,14 +499,14 @@ onUnmounted                ← 卸载完成（同步）
 
 ## 2. 内部实现
 
-### 2.1 本质
+**2.1 本质**
 
 - 钩子 = 组件实例上的**回调数组**（`instance.mounted = []`、`instance.updated = []` 等）
 - 顺序 = 渲染器 **patch 流程代码的物理书写顺序**（写死在哪一步调什么钩子）
 - 注册 = `onMounted(fn)` → `instance.mounted.push(fn)`
 - 触发 = 渲染器在流程的固定位置**直接遍历调用**：`arr.forEach(hook => hook())`
 
-### 2.2 渲染器内部伪代码
+**2.2 渲染器内部伪代码**
 
 ```js
 // 入口
@@ -560,7 +560,7 @@ function unmount(instance) {
 
 ## 3. 任务类型
 
-### 3.1 同步 vs 异步分类
+**3.1 同步 vs 异步分类**
 
 | 钩子 | 执行时机 | 同步/异步 |
 |---|---|---|
@@ -574,9 +574,9 @@ function unmount(instance) {
 | `onErrorCaptured` | 错误冒泡 | 同步 |
 | `onRenderTracked` / `onRenderTriggered` | effect 追踪/触发 | 同步 |
 
-### 3.2 异步钩子（mounted / updated）
+**3.2 异步钩子（mounted / updated）**
 
-#### 微任务实现
+**微任务实现**
 
 ```js
 const resolvedPromise = Promise.resolve()
@@ -591,26 +591,26 @@ function queuePostFlushCb(cb) {
 
 post flush 队列内部用 `Promise.resolve().then(...)`，是**微任务**（不是 setTimeout 那种宏任务）。
 
-#### 为什么要异步
+**为什么要异步**
 
 1. **保证 DOM 已更新**——同步 patch 完 DOM 后，浏览器还没布局完成；推微任务能让用户访问 DOM 时拿到正确的尺寸、布局信息
 2. **批量更新**——同一个 tick 内的多次数据变化合并成一次 patch，只触发一次 `onUpdated`
 
-### 3.3 同步钩子
+**3.3 同步钩子**
 
-#### before* 钩子为什么同步
+**before\* 钩子为什么同步**
 
 - `onBeforeMount`：必须在 patch **之前**触发，否则没意义（DOM 还没创建）
 - `onBeforeUpdate`：必须在重新 patch **之前**触发，让你能拦截/做准备工作
 - 同步调用能保证拿到当前最新的 props/state
 
-#### unmount 钩子为什么同步
+**unmount 钩子为什么同步**
 
 - 卸载是终态操作，没有"批量"或"等待布局"的需求
 - 同步触发让 cleanup 逻辑（清理定时器、事件监听）立即执行
 - 在 `v-if="false"` 场景下，组件马上要从 DOM 移除，同步触发语义更清晰
 
-#### 其他同步钩子
+**其他同步钩子**
 
 - `onActivated` / `onDeactivated`：keep-alive 切换是直接操作，无异步需求
 - `onErrorCaptured`：错误冒泡是同步机制
@@ -666,7 +666,7 @@ watchEffect(() => {
 
 # Effect 的本质与分类
 
-## 响应式变量更新后重新执行的函数叫什么？
+## 响应式变量更新后重新执行的函数
 
 在 Vue 响应式系统中统称为 **effect（响应式函数）**。从设计模式角度（观察者模式）：
 - 响应式变量 = **发布者（Observable）**
@@ -678,7 +678,7 @@ effect 执行 → 读取依赖 → track() 收集依赖
 依赖更新 → trigger() → 通知所有订阅者 → effect 重新执行
 ```
 
-## callback 就是 effect 吗？
+## callback 与 effect 的关系
 
 **不完全是**。callback 是普通函数，Vue 内部通过 `effect()` 包装后才成为响应式 effect。
 
@@ -690,7 +690,7 @@ watchEffect(() => {
 // Vue 内部用 effect() 包装，才具备依赖收集和触发更新的能力
 ```
 
-## Vue 所有 effect 都是异步的吗？
+## Vue effect 的异步特性
 
 **不是**，需要区分：
 
@@ -707,7 +707,7 @@ watchEffect(() => {
 
 # Computed 的本质
 
-## computed 是副作用吗？
+## computed 的副作用性质
 
 **不是**。`computed` 是**派生状态（Derived State）**，不是副作用。
 
@@ -724,7 +724,7 @@ const double = computed(() => count.value * 2)
 
 虽然 computed 的 getter 会重新执行，但它不修改任何外部状态，所以不是副作用。
 
-## computed 内部有没有 effect？
+## computed 内部的 effect 机制
 
 **有**，但是 **lazy effect（懒执行 effect）**。
 
@@ -762,7 +762,7 @@ function computed(getter) {
 }
 ```
 
-## computed 的返回值是响应式变量吗？
+## computed 的返回值响应式特性
 
 **是**。返回一个 **ref-like 响应式对象**，可以作为任何 effect 的依赖。
 
@@ -776,7 +776,7 @@ watchEffect(() => {
 })
 ```
 
-## computed 的 track/trigger 如何实现？
+## computed 的 track/trigger 实现机制
 
 通过 **getter/setter 属性访问器**，和 ref 基本类型的包装方式相同：
 
@@ -805,7 +805,7 @@ watchEffect(() => {
 4. scheduler: dirty = true, trigger(double.dep) → watchEffect 重新执行
 ```
 
-## computed 为什么不用 Proxy 包装返回值？
+## computed 不采用 Proxy 包装返回值的原因
 
 因为**不是它的职责**：
 
@@ -827,7 +827,7 @@ const userInfo = computed(() => reactive({ name: '张三' }))
 
 # Proxy vs getter/setter（defineProperty）
 
-## 为什么 ref 包装引用类型要用 Proxy？
+## ref 包装引用类型使用 Proxy 的原因
 
 `ref` 的 `.value` 读写始终用 getter/setter，但 `.value` 内部的对象用 `reactive()`（Proxy）包装。
 
@@ -840,7 +840,7 @@ const userInfo = computed(() => reactive({ name: '张三' }))
 | 初始化性能 | ❌ 需递归遍历所有层级 | ✅ 懒代理，按需代理 |
 | 浏览器兼容性 | IE9+ | IE 不支持 |
 
-### 1. 无法拦截属性的新增和删除
+**1. 无法拦截属性的新增和删除**
 
 ```js
 // Object.defineProperty 只能拦截已存在的属性
@@ -855,7 +855,7 @@ proxy.age = 18     // ✅ 触发 set 拦截
 delete proxy.name  // ✅ 触发 deleteProperty 拦截
 ```
 
-### 2. 无法优雅处理数组
+**2. 无法优雅处理数组**
 
 ```js
 const arr = [1, 2, 3]
@@ -871,7 +871,7 @@ proxy.length = 0 // ✅ 触发 set
 proxy.push(4)    // ✅ 触发 set (length 和 索引)
 ```
 
-### 3. 性能问题：递归初始化 vs 懒代理
+**3. 性能问题：递归初始化 vs 懒代理**
 
 ```js
 const deepObj = { a: { b: { c: 1 } } }
@@ -1125,7 +1125,7 @@ onUnmounted(() => bus.off('refresh'))
 
 **场景：** 复杂的状态共享，如用户登录信息、购物车、全局配置等。适合中大型项目，有规范的更新流程和开发者工具支持。
 
-### Pinia（Vue 3 推荐）
+**Pinia（Vue 3 推荐）**
 
 ```js
 // stores/user.js
@@ -1168,7 +1168,7 @@ function handleLogin() {
 </template>
 ```
 
-### Vuex（Vue 2 / 旧项目）
+**Vuex（Vue 2 / 旧项目）**
 
 ```js
 // store/index.js

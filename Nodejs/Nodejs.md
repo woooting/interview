@@ -72,10 +72,10 @@ process.stdin.once('data', (data) => {
 
 ## 进程控制
 
-### process.exit([code])
+**process.exit([code])**
 终止当前进程，code 0 表示正常退出，1 表示异常退出。
 
-### exit 事件
+**exit 事件**
 进程即将退出时触发，可在回调中执行清理工作。
 
 ```js
@@ -113,7 +113,7 @@ stats.isDirectory()  // true / false
 stats.isFile()       // true / false
 ```
 
-### existsSync vs accessSync
+**existsSync vs accessSync**
 
 | 维度 | existsSync | accessSync |
 |------|------------|------------|
@@ -142,7 +142,7 @@ await fs.copyFile('source.txt', 'dest.txt')
 await fs.mkdir('a/b/c', { recursive: true })
 ```
 
-### readdir 与目录遍历
+**readdir 与目录遍历**
 
 ```js
 const entries = await fs.readdir(docsDir, { withFileTypes: true })

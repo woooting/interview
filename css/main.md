@@ -46,19 +46,19 @@
 
 ## 可继承的属性
 
-### 文本相关
+**文本相关**
 - `color`、`font-*`（font-size, font-family, font-weight 等）
 - `line-height`、`text-align`、`text-indent`、`text-decoration`
 - `letter-spacing`、`word-spacing`、`direction`、`unicode-bidi`
 - `visibility`、`cursor`
 
-### 列表相关
+**列表相关**
 - `list-style`、`list-style-type`、`list-style-position`、`list-style-image`
 
-### 表格相关
+**表格相关**
 - `border-collapse`、`border-spacing`、`caption-side`、`empty-cells`
 
-### 其他
+**其他**
 - `quotes`、`content`、`tab-size`
 
 ## 不可继承的属性
@@ -102,7 +102,7 @@
 | `flex`         | 弹性布局，一维排列               | `.flex { display: flex; justify-content: center; }`          | 导航栏、自适应卡片   |
 | `grid`         | 网格布局，二维排列               | `.grid { display: grid; grid-template-columns: repeat(3, 1fr); }` | 图片画廊、响应式网格 |
 
-### 各属性详解
+**各属性详解**
 
 1. **none：**
    - 设置元素为 `display:none`，会导致元素不可见，但不会消失在DOM树中
@@ -351,7 +351,7 @@ width:200px
 
 这里需要注意dom顺序，如果box2在box1后边，那么浮动 `float:left` 就会失效，因为dom渲染是按顺序来的，容器中如果先渲染box1，就会占据父容器所有宽高，导致box2浮动失败
 
-### HTML
+**HTML**
 
 ```html
 <main class="container">
@@ -364,7 +364,7 @@ width:200px
 </main>
 ```
 
-### CSS
+**CSS**
 
 ```css
 .box1 {
@@ -482,14 +482,14 @@ BFC 内部的 margin 与外部隔离，不会穿透父元素。
 | 标准盒模型（W3C） | `content-box`（默认） | `width` = content，实际占用 = content + padding + border |
 | IE 盒模型（怪异） | `border-box` | `width` = content + padding + border，padding/border 向内挤 |
 
-### content-box（默认）
+**content-box（默认）**
 
 ```css
 .box { width: 200px; padding: 20px; border: 5px solid; }
 /* content = 200px，实际占用 = 200 + 20*2 + 5*2 = 250px */
 ```
 
-### border-box（推荐）
+**border-box（推荐）**
 
 ```css
 .box { box-sizing: border-box; width: 200px; padding: 20px; border: 5px solid; }
@@ -535,7 +535,7 @@ BFC 内部的 margin 与外部隔离，不会穿透父元素。
 
 ## 发生的三种情况
 
-### 1. 相邻兄弟元素
+**1. 相邻兄弟元素**
 
 ```css
 .box1 { margin-bottom: 20px; }
@@ -543,7 +543,7 @@ BFC 内部的 margin 与外部隔离，不会穿透父元素。
 /* 实际间距 = max(20, 30) = 30px，不是 50px */
 ```
 
-### 2. 父子元素
+**2. 父子元素**
 
 子元素的 `margin-top` / `margin-bottom` 如果父元素顶部/底部**没有 `border` 或 `padding` 阻隔**，会穿透父元素，与父元素的 margin 合并。
 
@@ -553,7 +553,7 @@ BFC 内部的 margin 与外部隔离，不会穿透父元素。
 /* 实际偏移 = max(20, 40) = 40px，子元素贴在父顶部，合并的 margin 放在父外部 */
 ```
 
-### 3. 空块级元素（自我折叠）
+**3. 空块级元素（自我折叠）**
 
 没有 content / padding / border / height / min-height 的空块元素，其 `margin-top` 和 `margin-bottom` 会互相折叠。
 
