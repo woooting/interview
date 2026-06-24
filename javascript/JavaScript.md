@@ -1778,4 +1778,308 @@ app.post('/upload/merge', express.json(), (req, res) => {
 })
 
 app.listen(3000)
+
+
+# 可选链和空值合并符
+
+## 1. 可选链（Optional Chaining）`?.`
+
+### 作用
+
+`?.` 允许在访问深层嵌套的对象属性时，如果中间某个值为 `null` 或 `undefined`，立即短路返回 `undefined`，而不是抛出 `TypeError`。
+
+三种语法形式：
+- `obj?.prop` — 安全访问属性
+- `obj?.[expr]` — 安全动态属性访问
+- `func?.()` — 安全调用函数
+
+### 对比示例
+
+```javascript
+// 没有可选链：中间属性为 null/undefined 时报错
+const user = { profile: null }
+user.profile.address.city
+// TypeError: Cannot read properties of null (reading 'address')
+
+// 使用可选链：安全返回 undefined
+user?.profile?.address?.city
+// undefined（不会报错）
+```
+
+相比传统写法：
+
+```javascript
+// 传统方案：&& 逐层判断（冗长易漏）
+const city = user && user.profile && user.profile.address && user.profile.address.city
+
+// 可选链：链式直达
+const city = user?.profile?.address?.city
+```
+
+### 适用场景
+
+| 场景 | 说明 |
+|------|------|
+| API 响应解析 | 深层嵌套的 JSON 数据，部分字段可能缺失 |
+| 可选回调 | `callback?.()` 避免 `callback is not a function` |
+| DOM 查询 | 元素可能不存在时安全访问属性 |
+| 配置对象 | 嵌套的配置项可能有缺省 |
+
+---
+
+## 2. 空值合并符（Nullish Coalescing）`??`
+
+### 作用
+
+`??` 仅在左侧表达式为 `null` 或 `undefined` 时返回右侧默认值。与 `||` 的核心区别：`??` 不会将 `''`、`0`、`false` 视为"空值"而替换。
+
+### 对比示例
+
+```javascript
+// || 的陷阱：所有假值都会被替换
+const count = 0 || 10      // 10（0 被错误替换）
+const name = '' || '默认'   // '默认'（空字符串被错误替换）
+const valid = false || true // true（false 被错误替换）
+
+// ?? 只替换 null/undefined
+const count = 0 ?? 10         // 0 ✅（0 是有效值，保留）
+const name = '' ?? '默认'     // '' ✅（空串是有效值，保留）
+const valid = false ?? true   // false ✅（false 是有效值，保留）
+const value = null ?? '默认'  // '默认'（null 才替换）
+const value2 = undefined ?? '默认'  // '默认'
+```
+
+### 适用场景
+
+| 场景 | 说明 |
+|------|------|
+| 函数参数默认值 | 区分"传了 0/false"和"没传" |
+| 数值计算 | 避免错误替换有效值 0 |
+| 配合可选链 | `user?.age ?? 18` 优雅提供兜底 |
+
+---
+
+## 3. 两者配合使用
+
+```javascript
+// 从深层对象安全取值 + 提供默认值
+const city = user?.profile?.address?.city ?? '未知城市'
+```
+
+## 4. 注意事项
+
+- `?.` 和 `??` 都是 **ES2020** 特性，现代浏览器和 Node 14+ 原生支持，TypeScript 3.7+ 支持编译
+- 禁止将 `??` 与 `&&` 或 `||` 直接混用（需要用括号明确优先级），但 `?.` 和 `??` 搭配是安全的
+
+
+# 内存泄露
+
+## 1. 导致前端内存泄露的常见情况
+
+### 1.1 意外的全局变量
+
+未声明的变量被挂载到全局对象上，或函数内 `this` 指向全局导致属性泄露：
+
+```javascript
+function foo() {
+  leak = '全局变量'       // 未声明 → window.leak
+  this.bar = '也泄露了'   // 普通函数 this → window
+}
+foo()
+```
+
+### 1.2 被遗忘的定时器和回调
+
+`setInterval` / `setTimeout` 未清理，回调持续持有对大对象的引用：
+
+```javascript
+const bigData = new Array(1000000)
+setInterval(() => {
+  console.log(bigData)   // bigData 永远无法被回收
+}, 1000)
+// clearInterval 未被调用
+```
+
+### 1.3 未移除的事件监听
+
+DOM 元素已移除，但其事件监听器中引用的对象仍被持有：
+
+```javascript
+const btn = document.getElementById('btn')
+const bigData = new Array(1000000)
+btn.addEventListener('click', () => {
+  console.log(bigData)   // 闭包持有 bigData
+})
+// btn 从 DOM 移除后，监听器未被 removeEventListener → bigData 无法回收
+```
+
+### 1.4 闭包持有大对象
+
+闭包中引用的大对象不会被释放，即使闭包本身不再需要：
+
+```javascript
+function createLeak() {
+  const bigData = new Array(1000000)
+  return function() {
+    console.log('hello')     // 虽然没用到 bigData，但闭包仍持有引用
+  }
+}
+const leakFn = createLeak()
+// leakFn 一直存活 → bigData 一直存活
+```
+
+### 1.5 DOM 引用未清理
+
+JS 变量中保存了对已移除 DOM 元素的引用，导致 DOM 树无法回收：
+
+```javascript
+const elements = {
+  button: document.getElementById('btn')
+}
+document.body.innerHTML = ''   // DOM 清空
+// elements.button 仍指向该 DOM 节点 → 内存泄露
+```
+
+### 1.6 脱离 DOM 树的节点引用
+
+用变量保存了 DOM 节点，节点即使被移除也不会被回收：
+
+```javascript
+const ul = document.createElement('ul')
+const li = document.createElement('li')
+ul.appendChild(li)
+document.body.appendChild(ul)
+
+ul.remove()       // ul 从 DOM 树移除
+// 但 li 变量仍持有引用 → li 不会被 GC
+```
+
+### 1.7 Map / Set 中遗忘的键
+
+使用 `Map` 或 `Set` 存储对象引用，未主动删除：
+
+```javascript
+const cache = new Map()
+function process(obj) {
+  cache.set(obj, { result: 'large data' })
+}
+// obj 被 GC 回收后，cache 中的条目仍然存在
+```
+
+### 1.8 控制台输出
+
+在 DevTools 控制台中打印大对象，会导致该对象因被控制台引用而无法 GC（仅在 DevTools 打开时）。
+
+## 2. 怎么预防内存泄露
+
+| 预防措施 | 说明 |
+|---------|------|
+| **使用严格模式** | `'use strict'` 阻止意外全局变量 |
+| **及时清理定时器** | 组件卸载时调用 `clearInterval` / `clearTimeout` |
+| **移除事件监听** | `removeEventListener` 配对，或用 `AbortController` 统一清理 |
+| **使用 WeakMap / WeakSet** | 键为弱引用，不影响 GC，适合缓存场景 |
+| **断开无用引用** | 不再需要的对象 `= null` 切断引用链 |
+| **组件卸载清理副作用** | React `useEffect` 返回清理函数；Vue `onUnmounted` 清理 |
+| **避免闭包持有不必要的大对象** | 闭包只引用真正需要的变量 |
+| **慎用全局变量** | 全局变量不会被回收，尽量局限在模块作用域内 |
+
+### WeakMap / WeakSet 的正确用法
+
+```javascript
+// ❌ Map：对象被 GC 后条目不会自动清除
+const cache = new Map()
+function process(obj) {
+  if (cache.has(obj)) return cache.get(obj)
+  cache.set(obj, expensiveData)
+}
+
+// ✅ WeakMap：对象被 GC 后条目自动清除
+const weakCache = new WeakMap()
+function process(obj) {
+  if (weakCache.has(obj)) return weakCache.get(obj)
+  weakCache.set(obj, expensiveData)
+}
+```
+
+### 借助 AbortController 批量清理事件监听
+
+```javascript
+class Component {
+  constructor() {
+    this.controller = new AbortController()
+    const signal = this.controller.signal
+    window.addEventListener('resize', this.onResize, { signal })
+    document.addEventListener('click', this.onClick, { signal })
+  }
+  destroy() {
+    this.controller.abort()  // 一次性移除所有绑定的监听器
+  }
+}
+```
+
+## 3. 怎么通过 Chrome DevTools 排查内存泄露
+
+### 3.1 Performance 面板（宏观排查）
+
+录制一段时间操作，观察内存曲线：
+
+1. 打开 DevTools → **Performance** 面板
+2. 勾选 **Memory** 复选框
+3. 点击录制按钮（圆点），执行可疑操作（如反复打开/关闭某组件）
+4. 停止录制，观察 **JS Heap** 曲线：
+   - ✅ 锯齿状（上升-回落-上升-回落）→ 正常，GC 在回收
+   - ❌ 阶梯状持续不回落 → 有内存泄露（每次操作后堆内存不回落到基线）
+
+### 3.2 Memory 面板（精确定位）
+
+#### 堆快照（Heap Snapshot）
+
+1. 打开 DevTools → **Memory** → **Heap snapshot**
+2. 操作前拍一个快照（Take snapshot）
+3. 执行可能泄露的操作（如打开→关闭组件，重复多次）
+4. 再拍一个快照
+5. 选择第二个快照，切换到 **Comparison**（对比）视图
+6. 按 **Delta** 排序，看哪些对象数量持续增加（如组件实例、DOM 节点）
+
+#### 查看 retainers（保留树）
+
+在快照中搜索可疑对象或类名：
+
+- 输入组件名（如 `MyComponent`）查看实例数
+- 查看对象的 **Retainers**（保留树），找到**谁还在引用它**，定位泄露源头
+- 注意 `(closure)` — 闭包中的引用，点击可展开查看其作用域中的变量
+
+#### Allocation instrumentation on timeline（时间线分配）
+
+1. **Memory** → **Allocation instrumentation on timeline**
+2. 开始录制，执行操作
+3. 蓝色竖条代表新分配的内存，查看哪些函数分配了大量对象且未被回收
+
+### 3.3 关键排查点
+
+| 排查对象 | 操作方法 |
+|---------|---------|
+| **Detached DOM 节点** | 快照中搜索 `Detached`，查看哪些 DOM 被移除但仍然存活 |
+| **闭包引用** | 快照搜索 `(closure)`，查看闭包中持有哪些大对象 |
+| **事件监听器** | **Elements** 面板选中元素 → **Event Listeners** 查看绑定的监听器 |
+| **定时器** | Sources 面板中查看正在运行的定时器 |
+| **构造函数实例** | 快照中搜索自定义的类名/构造函数名 |
+
+### 3.4 典型排查流程
+
+```
+发现页面卡顿 / 内存占用越来越高
+  │
+  ├─ Performance 面板录制，确认内存曲线不回落
+  │
+  ├─ 操作前拍快照 A → 重复操作 N 次 → 拍快照 B
+  │
+  ├─ Comparison 对比：Delta 为正的对象就是疑点
+  │
+  ├─ 搜索 Detached 查看游离 DOM 节点
+  │
+  ├─ 搜索自定义组件名查看实例数
+  │
+  └─ 查看 Retainers 找到引用链，定位泄露代码位置
+```
 ```

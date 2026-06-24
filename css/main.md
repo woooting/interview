@@ -388,6 +388,54 @@ width:200px
 
 ---
 
+# BFC（Block Formatting Context）
+
+**块级格式化上下文**，是 CSS 中一块独立的渲染区域，内部元素布局与外部隔离。
+
+## 核心特性
+
+| 特性 | 说明 |
+|------|------|
+| **内部垂直排列** | BFC 内块级盒子从上到下排列 |
+| **隔离性** | BFC 内部 margin 不会穿透到外部，外部 margin 也进不来 |
+| **包含浮动** | 计算 BFC 高度时，浮动子元素也参与计算 |
+| **不与浮动重叠** | BFC 区域不会与浮动元素重叠，可用于自适应布局 |
+
+## 触发方式
+
+| 方式 | 示例代码 |
+|------|---------|
+| `overflow: hidden / auto / scroll` | `overflow: hidden` |
+| `float: left / right` | `float: left` |
+| `position: absolute / fixed` | `position: absolute` |
+| `display: inline-block / flow-root / table-cell` | `display: flow-root` |
+| `display: flex / grid` | `display: flex` |
+| 根元素 `<html>` | 天生 BFC |
+
+> `display: flow-root` 是纯语义化触发 BFC 的方式，没有副作用（不像 `overflow: hidden` 会裁剪内容）。
+
+## 实际用途
+
+**1. 清除浮动（解决高度塌陷）**
+
+```css
+.parent { overflow: hidden; }  /* 触发 BFC，包裹浮动子元素 */
+.child  { float: left; }
+```
+
+**2. 防止 margin 折叠**
+
+BFC 内部的 margin 与外部隔离，不会穿透父元素。
+
+**3. 两栏自适应布局**
+
+```css
+.left  { float: left; width: 200px; }
+.right { overflow: hidden; }  /* BFC，不与左栏浮重重叠，自动占满剩余空间 */
+```
+
+---
+
 # CSS 布局单位
 
 ## px（像素）
@@ -422,4 +470,108 @@ width:200px
 - `1vh` = 视口高度的 1%，`100vh` = 视口总高度
 - 适合用于全屏展示、响应式字体大小、与视口相关的布局
 - 移动端注意滚动条会占用视口空间，可能导致 `100vw` 出现横向滚动条
+
+---
+
+# CSS 盒模型
+
+## 两种盒模型
+
+| 模型 | `box-sizing` | 宽度计算 |
+|------|-------------|---------|
+| 标准盒模型（W3C） | `content-box`（默认） | `width` = content，实际占用 = content + padding + border |
+| IE 盒模型（怪异） | `border-box` | `width` = content + padding + border，padding/border 向内挤 |
+
+### content-box（默认）
+
+```css
+.box { width: 200px; padding: 20px; border: 5px solid; }
+/* content = 200px，实际占用 = 200 + 20*2 + 5*2 = 250px */
+```
+
+### border-box（推荐）
+
+```css
+.box { box-sizing: border-box; width: 200px; padding: 20px; border: 5px solid; }
+/* content = 200 - 20*2 - 5*2 = 150px，实际占用 = 200px */
+```
+
+> 实际开发中普遍全局设置 `*, *::before, *::after { box-sizing: border-box; }`，用 `border-box` 更符合直觉，padding/border 向内挤，设置的 `width` 就是实际宽度。
+
+## 盒模型组成（从内到外）
+
+```
+┌─────────────────────────────┐  ← margin（透明，不计入元素尺寸）
+│  ┌─── border ─────────────┐ │
+│  │  ┌─ padding ─────────┐ │ │
+│  │  │  ┌─ content ──┐   │ │ │
+│  │  │  │            │   │ │ │
+│  │  │  └────────────┘   │ │ │
+│  │  └───────────────────┘ │ │
+│  └────────────────────────┘ │
+└─────────────────────────────┘
+```
+
+| 区域 | 说明 |
+|------|------|
+| **content** | 内容区域，宽高由 `width/height` 控制 |
+| **padding** | 内边距，在 border 内部，背景延伸到 padding 区域 |
+| **border** | 边框 |
+| **margin** | 外边距，透明不计入实际尺寸，但影响布局占位 |
+
+## visibility 对盒模型的影响
+
+| 值 | 是否可见 | 是否占空间 | 是否可交互 | 是否触发 reflow |
+|----|---------|-----------|-----------|---------------|
+| `display: none` | ✗ | ✗ | ✗ | ✓ |
+| `visibility: hidden` | ✗ | ✓ | ✗ | ✗（仅 repaint） |
+| `opacity: 0` | ✗ | ✓ | ✓ | ✗（仅 composite） |
+
+---
+
+# Margin 折叠
+
+垂直方向相邻的 margin 会合并成一个，取较大值。**水平方向不会折叠。**
+
+## 发生的三种情况
+
+### 1. 相邻兄弟元素
+
+```css
+.box1 { margin-bottom: 20px; }
+.box2 { margin-top: 30px; }
+/* 实际间距 = max(20, 30) = 30px，不是 50px */
+```
+
+### 2. 父子元素
+
+子元素的 `margin-top` / `margin-bottom` 如果父元素顶部/底部**没有 `border` 或 `padding` 阻隔**，会穿透父元素，与父元素的 margin 合并。
+
+```css
+.parent { margin-top: 20px; }  /* 无 border/padding */
+.child  { margin-top: 40px; }
+/* 实际偏移 = max(20, 40) = 40px，子元素贴在父顶部，合并的 margin 放在父外部 */
+```
+
+### 3. 空块级元素（自我折叠）
+
+没有 content / padding / border / height / min-height 的空块元素，其 `margin-top` 和 `margin-bottom` 会互相折叠。
+
+## 哪些不会折叠
+
+- **浮动元素**的 margin 不会与任何元素折叠
+- **绝对 / 固定定位**元素不会折叠
+- **flex / grid** 容器内的子元素不会折叠
+- **`overflow: hidden`** 等创建 BFC 的容器不会与子元素折叠
+- **行内元素**（`display: inline`）垂直 margin 无效，不存在折叠
+
+## 如何避免
+
+| 方式 | 说明 |
+|------|------|
+| `overflow: hidden/auto` | 父元素创建 BFC，阻止子 margin 穿透 |
+| 加 1px `border` 或 `padding` | 物理隔断父子 margin 的接触 |
+| 改用 `flex` / `grid` 布局 | flex/grid 容器内子元素不折叠 |
+| 只使用单方向 margin | 统一用 `margin-top` 或统一用 `margin-bottom` |
+| 浮动或绝对定位 | 这些元素本身不参与折叠 |
 ```

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>内存泄露排查实操演练</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; padding: 30px; background: #f5f5f5; }
+  .container { max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 8px; }
+  .desc { color: #666; font-size: 14px; margin-bottom: 24px; }
+  .card { background: #fff; border-radius: 10px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+  .card h2 { font-size: 16px; margin-bottom: 10px; }
+  .card .hint { font-size: 13px; color: #e67e22; background: #fef9e7; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; }
+  .card button { padding: 6px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; margin-right: 8px; }
+  .btn-leak { background: #e74c3c; color: #fff; }
+  .btn-leak:hover { background: #c0392b; }
+  .btn-clean { background: #27ae60; color: #fff; }
+  .btn-clean:hover { background: #1e8449; }
+  #log { font-size: 13px; color: #555; margin-top: 8px; max-height: 120px; overflow-y: auto; }
+  #log div { padding: 2px 0; border-bottom: 1px solid #eee; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🔍 内存泄露排查实操</h1>
+  <p class="desc">每个卡片演示一种泄露场景。先点"制造泄露"再点"清理"，在 DevTools 中观察内存变化。</p>
+
+  <!-- 泄露 1：全局变量 -->
+  <div class="card">
+    <h2>1. 意外的全局变量</h2>
+    <div class="hint">💡 数据挂到了 window 上，GC 无法回收。快照对比看 Array 的 retainers → Window</div>
+    <button class="btn-leak" onclick="leakGlobal()">制造泄露</button>
+    <button class="btn-clean" onclick="cleanGlobal()">清理</button>
+    <span id="globalStatus"></span>
+  </div>
+
+  <!-- 泄露 2：定时器 -->
+  <div class="card">
+    <h2>2. 被遗忘的定时器</h2>
+    <div class="hint">💡 定时器回调闭包持有大数组。快照对比看 Array 或 (closure) 的 retainers</div>
+    <button class="btn-leak" onclick="leakTimer()">制造泄露</button>
+    <button class="btn-clean" onclick="cleanTimer()">清理</button>
+    <span id="timerStatus"></span>
+  </div>
+
+  <!-- 泄露 3：DOM 引用 -->
+  <div class="card">
+    <h2>3. DOM 引用未释放</h2>
+    <div class="hint">💡 变量保存 DOM 引用，DOM 移除后仍存活。快照搜索 Detached HTMLDivElement</div>
+    <button class="btn-leak" onclick="leakDomRef()">创建 DOM</button>
+    <button class="btn-clean" onclick="cleanDomRef()">清空容器（保留引用）</button>
+    <button class="btn-clean" onclick="cleanDomRefHard()">彻底清理（置空引用）</button>
+    <div id="domContainer"></div>
+  </div>
+
+  <!-- 泄露 4：Map -->
+  <div class="card">
+    <h2>4. Map 缓存</h2>
+    <div class="hint">💡 Map 的键对象被 GC 后条目仍在。快照对比看 Map 数量增长</div>
+    <button class="btn-leak" onclick="leakMap()">制造泄露</button>
+    <button class="btn-clean" onclick="cleanMap()">清理</button>
+    <span id="mapStatus"></span>
+  </div>
+
+  <div id="log"><div>📋 操作日志</div></div>
+</div>
+
+<script>
+const log = (msg) => {
+  const el = document.getElementById('log')
+  const div = document.createElement('div')
+  div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`
+  el.appendChild(div)
+  el.scrollTop = el.scrollHeight
+}
+
+// ==================== 1. 全局变量 ====================
+function leakGlobal() {
+  if (!window._leakArray) window._leakArray = []
+  // 使用数字数组，不产生字符串
+  for (let i = 0; i < 50000; i++) {
+    window._leakArray.push(i)
+  }
+  document.getElementById('globalStatus').textContent = `长度: ${window._leakArray.length}`
+  log(`全局变量 _leakArray 已增大 (${window._leakArray.length} 条)`)
+}
+
+function cleanGlobal() {
+  window._leakArray = null
+  document.getElementById('globalStatus').textContent = ''
+  log('✅ 全局变量已置空')
+}
+
+// ==================== 2. 定时器 ====================
+let _timerId = null
+
+function leakTimer() {
+  if (_timerId) return log('⚠️ 定时器已存在，请先清理')
+  const bigArray = new Array(200000).fill(42)
+  _timerId = setInterval(() => {
+    document.title = `running ${Date.now()}`
+  }, 1000)
+  log('定时器启动，闭包持有大数组 (200000 个数字)')
+}
+
+function cleanTimer() {
+  if (_timerId) {
+    clearInterval(_timerId)
+    _timerId = null
+    log('✅ 定时器已清理')
+  }
+}
+
+// ==================== 3. DOM 引用 ====================
+const _domRefs = []
+
+function leakDomRef() {
+  const container = document.getElementById('domContainer')
+  for (let i = 0; i < 20; i++) {
+    const el = document.createElement('div')
+    el.textContent = `节点 ${Date.now() % 10000}-${i}`
+    el.style.cssText = 'display:inline-block;padding:4px 8px;margin:3px;background:#3498db;color:#fff;border-radius:4px;font-size:12px'
+    container.appendChild(el)
+    _domRefs.push(el)
+  }
+  log('创建了 20 个 DOM 节点并保存引用')
+}
+
+function cleanDomRef() {
+  document.getElementById('domContainer').innerHTML = ''
+  log('⚠️ 容器清空，但 _domRefs 仍持有引用 (共 ${_domRefs.length} 个)')
+}
+
+function cleanDomRefHard() {
+  _domRefs.length = 0
+  document.getElementById('domContainer').innerHTML = ''
+  log('✅ DOM 引用已全部释放')
+}
+
+// ==================== 4. Map ====================
+const _leakMap = new Map()
+let _idx = 0
+
+function leakMap() {
+  for (let i = 0; i < 200; i++) {
+    const key = { id: _idx++ }
+    _leakMap.set(key, new Array(500).fill(1))
+  }
+  document.getElementById('mapStatus').textContent = `Map 大小: ${_leakMap.size}`
+  log(`Map 缓存已增长 (共 ${_leakMap.size} 条)`)
+}
+
+function cleanMap() {
+  _leakMap.clear()
+  document.getElementById('mapStatus').textContent = ''
+  log('✅ Map 缓存已清空')
+}
+</script>
+</body>
+</html>
