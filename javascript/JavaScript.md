@@ -1871,6 +1871,7 @@ const city = user?.profile?.address?.city ?? '未知城市'
 - `?.` 和 `??` 都是 **ES2020** 特性，现代浏览器和 Node 14+ 原生支持，TypeScript 3.7+ 支持编译
 - 禁止将 `??` 与 `&&` 或 `||` 直接混用（需要用括号明确优先级），但 `?.` 和 `??` 搭配是安全的
 
+---
 
 # 内存泄露
 
@@ -2007,4 +2008,4 @@ class Component {
      → 搜索 Detached / 类名 / (closure)
      → 查看 Retainers 定位引用链 → 修复代码
    ```
-```
+
