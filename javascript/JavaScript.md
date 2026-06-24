@@ -1876,99 +1876,71 @@ const city = user?.profile?.address?.city ?? '未知城市'
 
 ## 1. 导致前端内存泄露的常见情况
 
-### 1.1 意外的全局变量
+1. **意外的全局变量** — 未声明的变量挂到全局对象上，或函数内 `this` 指向全局导致属性泄露：
+   ```javascript
+   function foo() {
+     leak = '全局变量'       // 未声明 → window.leak
+     this.bar = '也泄露了'   // 普通函数 this → window
+   }
+   foo()
+   ```
 
-未声明的变量被挂载到全局对象上，或函数内 `this` 指向全局导致属性泄露：
+2. **被遗忘的定时器** — `setInterval` / `setTimeout` 未清理，回调持续持有大对象引用：
+   ```javascript
+   const bigData = new Array(1000000)
+   setInterval(() => {
+     console.log(bigData)   // bigData 永远无法被回收
+   }, 1000)
+   // clearInterval 未被调用
+   ```
 
-```javascript
-function foo() {
-  leak = '全局变量'       // 未声明 → window.leak
-  this.bar = '也泄露了'   // 普通函数 this → window
-}
-foo()
-```
+3. **未移除的事件监听** — DOM 元素已移除，但其监听器中引用的对象仍被持有：
+   ```javascript
+   const btn = document.getElementById('btn')
+   const bigData = new Array(1000000)
+   btn.addEventListener('click', () => {
+     console.log(bigData)   // 闭包持有 bigData
+   })
+   // btn 从 DOM 移除后，监听器未被 removeEventListener → bigData 无法回收
+   ```
 
-### 1.2 被遗忘的定时器和回调
+4. **闭包持有大对象** — 闭包中引用的大对象不会被释放，即使闭包本身不再需要：
+   ```javascript
+   function createLeak() {
+     const bigData = new Array(1000000)
+     return function() {
+       console.log('hello')
+     }
+   }
+   const leakFn = createLeak()
+   ```
 
-`setInterval` / `setTimeout` 未清理，回调持续持有对大对象的引用：
+5. **DOM 引用未清理** — JS 变量保存已移除 DOM 元素的引用，DOM 树无法回收：
+   ```javascript
+   const elements = { button: document.getElementById('btn') }
+   document.body.innerHTML = ''   // DOM 清空
+   // elements.button 仍指向该 DOM 节点
+   ```
 
-```javascript
-const bigData = new Array(1000000)
-setInterval(() => {
-  console.log(bigData)   // bigData 永远无法被回收
-}, 1000)
-// clearInterval 未被调用
-```
+6. **脱离 DOM 树的节点引用** — 变量保存的 DOM 节点即使被移除也不会被回收：
+   ```javascript
+   const ul = document.createElement('ul')
+   const li = document.createElement('li')
+   ul.appendChild(li)
+   document.body.appendChild(ul)
+   ul.remove()
+   // li 变量仍持有引用 → li 不会被 GC
+   ```
 
-### 1.3 未移除的事件监听
+7. **Map / Set 中遗忘的键** — 对象被 GC 后 `Map` 条目仍存在：
+   ```javascript
+   const cache = new Map()
+   function process(obj) {
+     cache.set(obj, { result: 'large data' })
+   }
+   ```
 
-DOM 元素已移除，但其事件监听器中引用的对象仍被持有：
-
-```javascript
-const btn = document.getElementById('btn')
-const bigData = new Array(1000000)
-btn.addEventListener('click', () => {
-  console.log(bigData)   // 闭包持有 bigData
-})
-// btn 从 DOM 移除后，监听器未被 removeEventListener → bigData 无法回收
-```
-
-### 1.4 闭包持有大对象
-
-闭包中引用的大对象不会被释放，即使闭包本身不再需要：
-
-```javascript
-function createLeak() {
-  const bigData = new Array(1000000)
-  return function() {
-    console.log('hello')     // 虽然没用到 bigData，但闭包仍持有引用
-  }
-}
-const leakFn = createLeak()
-// leakFn 一直存活 → bigData 一直存活
-```
-
-### 1.5 DOM 引用未清理
-
-JS 变量中保存了对已移除 DOM 元素的引用，导致 DOM 树无法回收：
-
-```javascript
-const elements = {
-  button: document.getElementById('btn')
-}
-document.body.innerHTML = ''   // DOM 清空
-// elements.button 仍指向该 DOM 节点 → 内存泄露
-```
-
-### 1.6 脱离 DOM 树的节点引用
-
-用变量保存了 DOM 节点，节点即使被移除也不会被回收：
-
-```javascript
-const ul = document.createElement('ul')
-const li = document.createElement('li')
-ul.appendChild(li)
-document.body.appendChild(ul)
-
-ul.remove()       // ul 从 DOM 树移除
-// 但 li 变量仍持有引用 → li 不会被 GC
-```
-
-### 1.7 Map / Set 中遗忘的键
-
-使用 `Map` 或 `Set` 存储对象引用，未主动删除：
-
-```javascript
-const cache = new Map()
-function process(obj) {
-  cache.set(obj, { result: 'large data' })
-}
-// obj 被 GC 回收后，cache 中的条目仍然存在
-```
-
-### 1.8 控制台输出
-
-在 DevTools 控制台中打印大对象，会导致该对象因被控制台引用而无法 GC（仅在 DevTools 打开时）。
+8. **控制台输出** — DevTools 控制台打印大对象，会被控制台引用而无法 GC（仅 DevTools 打开时）。
 
 ## 2. 怎么预防内存泄露
 
@@ -1983,27 +1955,18 @@ function process(obj) {
 | **避免闭包持有不必要的大对象** | 闭包只引用真正需要的变量 |
 | **慎用全局变量** | 全局变量不会被回收，尽量局限在模块作用域内 |
 
-### WeakMap / WeakSet 的正确用法
+**WeakMap / WeakSet** 作缓存：键为弱引用，对象被 GC 后条目自动清除。
+**AbortController** 批量清理事件监听：统一 `controller.abort()` 移除所有绑定的监听器。
 
 ```javascript
-// ❌ Map：对象被 GC 后条目不会自动清除
-const cache = new Map()
+// WeakMap 替代 Map 做缓存
+const cache = new WeakMap()
 function process(obj) {
   if (cache.has(obj)) return cache.get(obj)
   cache.set(obj, expensiveData)
 }
 
-// ✅ WeakMap：对象被 GC 后条目自动清除
-const weakCache = new WeakMap()
-function process(obj) {
-  if (weakCache.has(obj)) return weakCache.get(obj)
-  weakCache.set(obj, expensiveData)
-}
-```
-
-### 借助 AbortController 批量清理事件监听
-
-```javascript
+// AbortController 批量清理
 class Component {
   constructor() {
     this.controller = new AbortController()
@@ -2011,75 +1974,37 @@ class Component {
     window.addEventListener('resize', this.onResize, { signal })
     document.addEventListener('click', this.onClick, { signal })
   }
-  destroy() {
-    this.controller.abort()  // 一次性移除所有绑定的监听器
-  }
+  destroy() { this.controller.abort() }
 }
 ```
 
 ## 3. 怎么通过 Chrome DevTools 排查内存泄露
 
-### 3.1 Performance 面板（宏观排查）
+1. **Performance 面板（宏观排查）** — 录制一段时间操作，观察内存曲线：
+   - 打开 DevTools → **Performance** → 勾选 **Memory** → 录制 → 执行操作 → 停止
+   - ✅ JS Heap 锯齿状（上升-回落）→ GC 正常
+   - ❌ 阶梯状持续不回落 → 有内存泄露
 
-录制一段时间操作，观察内存曲线：
+2. **Memory 面板（精确定位）**：
+   - **堆快照对比**：操作前拍快照 A → 重复操作 → 拍快照 B → **Comparison** 视图按 **Delta** 排序，看哪些对象持续增加
+   - **查看 retainers**：搜索类名/对象 → 查看保留树，找到谁还在引用它；注意 `(closure)` 闭包引用
+   - **Allocation timeline**：录制后查看哪些函数分配了大量对象且未被回收
 
-1. 打开 DevTools → **Performance** 面板
-2. 勾选 **Memory** 复选框
-3. 点击录制按钮（圆点），执行可疑操作（如反复打开/关闭某组件）
-4. 停止录制，观察 **JS Heap** 曲线：
-   - ✅ 锯齿状（上升-回落-上升-回落）→ 正常，GC 在回收
-   - ❌ 阶梯状持续不回落 → 有内存泄露（每次操作后堆内存不回落到基线）
+3. **关键排查点**：
 
-### 3.2 Memory 面板（精确定位）
+   | 排查对象 | 操作方法 |
+   |---------|---------|
+   | **Detached DOM 节点** | 快照中搜索 `Detached` |
+   | **闭包引用** | 快照搜索 `(closure)` |
+   | **事件监听器** | Elements → Event Listeners |
+   | **定时器** | Sources 面板查看 |
+   | **构造函数实例** | 快照搜索自定义类名 |
 
-#### 堆快照（Heap Snapshot）
-
-1. 打开 DevTools → **Memory** → **Heap snapshot**
-2. 操作前拍一个快照（Take snapshot）
-3. 执行可能泄露的操作（如打开→关闭组件，重复多次）
-4. 再拍一个快照
-5. 选择第二个快照，切换到 **Comparison**（对比）视图
-6. 按 **Delta** 排序，看哪些对象数量持续增加（如组件实例、DOM 节点）
-
-#### 查看 retainers（保留树）
-
-在快照中搜索可疑对象或类名：
-
-- 输入组件名（如 `MyComponent`）查看实例数
-- 查看对象的 **Retainers**（保留树），找到**谁还在引用它**，定位泄露源头
-- 注意 `(closure)` — 闭包中的引用，点击可展开查看其作用域中的变量
-
-#### Allocation instrumentation on timeline（时间线分配）
-
-1. **Memory** → **Allocation instrumentation on timeline**
-2. 开始录制，执行操作
-3. 蓝色竖条代表新分配的内存，查看哪些函数分配了大量对象且未被回收
-
-### 3.3 关键排查点
-
-| 排查对象 | 操作方法 |
-|---------|---------|
-| **Detached DOM 节点** | 快照中搜索 `Detached`，查看哪些 DOM 被移除但仍然存活 |
-| **闭包引用** | 快照搜索 `(closure)`，查看闭包中持有哪些大对象 |
-| **事件监听器** | **Elements** 面板选中元素 → **Event Listeners** 查看绑定的监听器 |
-| **定时器** | Sources 面板中查看正在运行的定时器 |
-| **构造函数实例** | 快照中搜索自定义的类名/构造函数名 |
-
-### 3.4 典型排查流程
-
-```
-发现页面卡顿 / 内存占用越来越高
-  │
-  ├─ Performance 面板录制，确认内存曲线不回落
-  │
-  ├─ 操作前拍快照 A → 重复操作 N 次 → 拍快照 B
-  │
-  ├─ Comparison 对比：Delta 为正的对象就是疑点
-  │
-  ├─ 搜索 Detached 查看游离 DOM 节点
-  │
-  ├─ 搜索自定义组件名查看实例数
-  │
-  └─ 查看 Retainers 找到引用链，定位泄露代码位置
-```
+4. **典型排查流程**：
+   ```
+   Performance 确认曲线不回落
+     → 快照 A → 操作 → 快照 B（Comparison 对比）
+     → 搜索 Detached / 类名 / (closure)
+     → 查看 Retainers 定位引用链 → 修复代码
+   ```
 ```
