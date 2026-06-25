@@ -1901,7 +1901,8 @@ const city = user?.profile?.address?.city ?? '未知城市'
    foo()
    ```
 
-2. **被遗忘的定时器** — `setInterval` / `setTimeout` 未清理，回调持续持有大对象引用：
+2. **遗忘的定时器** — `setInterval` / `setTimeout` 未清理，回调持续持有大对象引用：
+   
    ```javascript
    const bigData = new Array(1000000)
    setInterval(() => {
@@ -1909,7 +1910,7 @@ const city = user?.profile?.address?.city ?? '未知城市'
    }, 1000)
    // clearInterval 未被调用
    ```
-
+   
 3. **未移除的事件监听** — DOM 元素已移除，但其监听器中引用的对象仍被持有：
    ```javascript
    const btn = document.getElementById('btn')

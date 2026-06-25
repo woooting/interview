@@ -574,4 +574,3 @@ BFC 内部的 margin 与外部隔离，不会穿透父元素。
 | 改用 `flex` / `grid` 布局 | flex/grid 容器内子元素不折叠 |
 | 只使用单方向 margin | 统一用 `margin-top` 或统一用 `margin-bottom` |
 | 浮动或绝对定位 | 这些元素本身不参与折叠 |
-```
