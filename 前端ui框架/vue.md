@@ -1098,3 +1098,90 @@ app.config.globalProperties.$utils = utils
 
 > 优先用 props / emit，保持数据流清晰。项目复杂度提升后再引入 Pinia，不要一开始就用全局状态管理。
 
+---
+
+# 路由懒加载
+
+## 1. 核心：ESM 动态导入
+
+路由懒加载基于 ES Module 的动态导入语法 `import()`，将组件定义为一个**异步加载函数**而非静态导入：
+
+```js
+// 静态导入（打包后合入主包）
+import Foo from './Foo.vue'
+
+// 动态导入（懒加载）
+const Foo = () => import('./Foo.vue')
+```
+
+- `import()` 是 ES2020 标准语法，返回一个 **Promise**，resolve 时为模块对象
+- Vue Router 接收的 `component` 选项可以是**一个返回 Promise 的函数**，Router 内部在路由命中时才调用它
+
+## 2. 构建产物分离
+
+打包工具（Webpack / Vite）在编译阶段识别 `import()` 调用，做两件事：
+
+- 将 `import('./Foo.vue')` 对应的组件代码从主包中**抽离**，生成独立的 chunk JS 文件（如 `Foo.abc123.js`）
+- 在主包中只保留**引用关系**和**加载逻辑**（即 `() => import('./Foo.vue')` 编译后的函数）
+
+```
+构建前：                构建后：
+app.js                  app.js（主包）
+  import Foo            chunk-Foo.abc123.js（从主包剥离）
+  import Bar            chunk-Bar.xyz456.js（从主包剥离）
+  import Baz
+```
+
+主包体积因此显著减小，只包含首屏必要代码。
+
+## 3. 运行时加载流程
+
+路由跳转时，Vue Router 的执行链路如下：
+
+```
+路由变化 → router.beforeEach → 匹配到懒加载路由 → 执行 () => import('./Foo.vue')
+                                                          │
+                                                          ↓
+                                                    返回 Promise
+                                                          │
+                                                          ↓
+                                                  发起 HTTP 请求，下载 chunk JS
+                                                          │
+                                                          ↓
+                                                  Promise resolve，得到组件模块
+```
+
+- Router 内部通过**动态组件** `component :is="..."` 渲染
+- 下载期间组件位置**无内容**（可用路由守卫配合 loading 状态优化体验）
+
+## 4. 组件渲染
+
+chunk JS 下载完成后：
+
+```
+Promise resolve → 拿到模块对象 → Router 将模块赋值给路由的 component
+    → Vue 动态组件 <component :is="..." /> 识别到组件定义
+    → 走标准组件挂载流程：创建 VNode → patch → DOM 插入
+```
+
+模块对象的结构如下：
+
+```js
+// 下载的 chunk-Foo.abc123.js
+export default {
+  // 组件定义（template/render、setup 等）
+  name: 'Foo',
+  // ...
+}
+```
+
+Vue 拿到的是完整的组件定义对象，后续渲染流程与静态导入完全一致。
+
+## 5. 作用
+
+- **加速首屏加载**：主包体积缩小，首屏 JS 下载量减少，DOMContentLoaded 时间提前
+- **加速页面打开**：非首屏页面代码按需加载，用户访问时才下载对应 chunk，避免一次性下载整个应用
+- **减少带宽浪费**：用户可能永远不会访问的页面代码，永远不会被下载
+
+> 路由懒加载的本质是**代码分割 + 按需加载**，用更小的初始传输量换取更快的首屏指标与按需加载能力，是性能优化的第一优先级手段。
+

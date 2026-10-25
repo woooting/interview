@@ -266,3 +266,247 @@ const __dirname = dirname(__filename)               // 当前文件所在目录
 
 > 新项目优先使用 ESM。如需兼容 CJS 生态，可用 `.mjs` 或 `type: module` + dynamic import()。
 
+---
+
+# stream 流模块
+
+Node.js 的流（Stream）是处理数据的抽象接口，支持背压（backpressure）机制，适合大文件或网络数据的逐块处理。04 文件夹中的 csv-to-json、line-counter、upload-server 均基于流实现。
+
+## 核心类型
+
+| 类型 | 用途 | 示例 |
+|------|------|------|
+| Readable | 可读流，数据源头 | fs.createReadStream |
+| Writable | 可写流，数据终点 | fs.createWriteStream |
+| Transform | 转换流，读写中间处理数据 | 自定义解析、统计 |
+
+## 创建流与 Pipeline
+
+`pipeline` 是推荐的流连接方式，自动处理背压、错误传播和资源清理。04 中所有流式脚本均使用它。
+
+```js
+import { pipeline } from 'node:stream/promises'
+import { Transform } from 'node:stream'
+import fs from 'node:fs'
+
+await pipeline(
+  fs.createReadStream('input.csv', { highWaterMark: 64 * 1024 }),
+  new Transform({
+    transform(chunk, _encoding, callback) {
+      // chunk 是 Buffer，处理完后调用 callback(null, result)
+      callback(null, chunk)
+    },
+    flush(callback) {
+      // 数据流结束前调用，处理剩余数据
+      callback()
+    },
+  }),
+  fs.createWriteStream('output.json'),
+)
+```
+
+`highWaterMark` 控制每次读取的字节数（默认 64KB），影响内存占用和 I/O 频率。
+
+## Transform 流的两个钩子
+
+- **transform(chunk, encoding, callback)**：每段数据到达时调用，callback 接受 `(error, data)`
+- **flush(callback)**：所有数据处理完毕后调用，用于输出剩余数据或收尾
+
+```js
+// line-counter.js 示例：统计行数
+const countStream = new Transform({
+  transform(chunk, _encoding, callback) {
+    byteCount += chunk.length
+    const text = chunk.toString('utf-8')
+    remainder += text
+    const idx = remainder.lastIndexOf('\n')
+    if (idx !== -1) {
+      lineCount += remainder.slice(0, idx).split('\n').length
+      remainder = remainder.slice(idx + 1)
+    }
+    callback()
+  },
+  flush(callback) {
+    if (remainder.length > 0) lineCount++
+    callback()
+  },
+})
+```
+
+> chunk 是 Buffer 对象，需 toString() 转为字符串处理。
+
+---
+
+# http 模块
+
+http 模块既可创建 HTTP 服务端，也可作为客户端发起 HTTP 请求。04 的 upload-server 和 demo-upload 同时演示了两端。
+
+## 创建 HTTP 服务
+
+```js
+import http from 'node:http'
+
+const server = http.createServer((req, res) => {
+  // req 是 IncomingMessage（Readable Stream）
+  // res 是 ServerResponse（Writable Stream）
+  const url = new URL(req.url, `http://${req.headers.host}`)
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify({ status: 'ok' }))
+})
+
+server.listen(3000, () => {
+  console.log('Server running at http://localhost:3000')
+})
+```
+
+## 路由分发
+
+通过 `req.method` 和 `url.pathname` 实现基本路由：
+
+```js
+if (req.method === 'POST' && url.pathname === '/upload') {
+  // 处理上传
+} else if (req.method === 'GET' && url.pathname.startsWith('/files/')) {
+  // 处理下载
+}
+```
+
+## 文件下载服务
+
+设置 HTTP 响应头告知浏览器将响应作为文件下载：
+
+```js
+res.writeHead(200, {
+  'Content-Type': 'application/octet-stream',
+  'Content-Length': stat.size,
+  'Content-Disposition': `attachment; filename="${filename}"`,
+})
+await pipeline(fs.createReadStream(filePath), res)
+```
+
+## HTTP 客户端请求
+
+```js
+import http from 'node:http'
+
+const url = new URL('/upload?name=test.txt', 'http://localhost:3000')
+const body = await new Promise((resolve, reject) => {
+  const req = http.request(url, { method: 'POST' }, (res) => {
+    let data = ''
+    res.on('data', (chunk) => (data += chunk))
+    res.on('end', () => resolve(data))
+  })
+  pipeline(fs.createReadStream('test.txt'), req).catch(reject)
+})
+```
+
+> 请求对象 req 是 Writable Stream，可将 Readable Stream 用 pipeline 接入 req 实现流式上传。
+
+## 错误处理模式
+
+- 服务器端：接收流时出错应清理已写入的文件（fs.unlinkSync）
+- 客户端：处理 `ENOENT`（文件不存在）等常见错误
+
+---
+
+# events 事件模块
+
+events 模块提供 EventEmitter 类，是 Node.js 事件驱动架构的基础。04 的 DownloadManager 通过继承 EventEmitter 实现事件通知。
+
+```js
+import { EventEmitter } from 'node:events'
+
+class DownloadManager extends EventEmitter {
+  constructor(options = {}) {
+    super()
+    this.maxConcurrent = options.maxConcurrent ?? 3
+  }
+
+  download(url) {
+    // 执行下载...
+    this.emit('progress', { file: url, percent, downloaded, totalSize })
+    this.emit('complete', { file: url, path: output })
+    this.emit('error', { file: url, error })
+  }
+}
+
+const dm = new DownloadManager()
+dm.on('progress', ({ file, percent }) => console.log(`${file}: ${percent}%`))
+dm.on('complete', ({ path }) => console.log(`Saved to ${path}`))
+dm.download('http://example.com/file.zip')
+```
+
+## 常用方法
+
+| 方法 | 说明 |
+|------|------|
+| on(event, listener) | 注册事件监听器 |
+| emit(event, ...args) | 触发事件，向监听器传递参数 |
+| once(event, listener) | 注册一次性监听器 |
+
+---
+
+# 其他模块
+
+## https 模块
+
+与 http API 完全一致，用于 HTTPS 请求。download-manager 根据 URL 协议选择 http 或 https：
+
+```js
+const proto = url.startsWith('https') ? https : http
+proto.get(url, (res) => { /* 处理响应 */ })
+```
+
+## crypto 模块 — randomUUID
+
+生成随机的 UUID（v4），适合用于文件命名、会话标识等：
+
+```js
+import { randomUUID } from 'node:crypto'
+randomUUID()  // '550e8400-e29b-41d4-a716-446655440000'
+```
+
+## url 模块 — fileURLToPath
+
+将 ESM 中的 `import.meta.url`（file:// 协议）转换为系统绝对路径：
+
+```js
+import { fileURLToPath } from 'node:url'
+import { dirname } from 'node:path'
+
+const __filename = fileURLToPath(import.meta.url)  // 当前文件绝对路径
+const __dirname = dirname(__filename)               // 当前目录
+```
+
+---
+
+# 并发控制模式
+
+通过任务队列 + 最大并发数限制控制异步操作的并行度：
+
+```js
+class TaskQueue {
+  constructor(concurrency) {
+    this.queue = []
+    this.running = 0
+    this.maxConcurrent = concurrency
+  }
+
+  add(task) {
+    this.queue.push(task)
+    this._next()
+  }
+
+  _next() {
+    while (this.running < this.maxConcurrent && this.queue.length > 0) {
+      const task = this.queue.shift()
+      this.running++
+      task().finally(() => {
+        this.running--
+        this._next()
+      })
+    }
+  }
+}
+```
+
